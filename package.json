@@ -1,0 +1,116 @@
+{
+  "name": "@tuna/react-native-payments",
+  "version": "1.0.0",
+  "description": "React Native payment processing SDK for Tuna with native Apple Pay and Google Pay support",
+  "type": "module",
+  "main": "dist/index.cjs.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "react-native": "src/index.ts",
+  "source": "src/index.ts",
+  "files": [
+    "dist",
+    "src",
+    "android",
+    "ios",
+    "*.podspec",
+    "!**/__tests__",
+    "!**/__fixtures__",
+    "!**/__mocks__"
+  ],
+  "scripts": {
+    "build": "rollup -c",
+    "build:dev": "rollup -c --watch",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint \"src/**/*.{ts,tsx}\"",
+    "lint:fix": "eslint \"src/**/*.{ts,tsx}\" --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\"",
+    "prepare": "npm run build",
+    "example": "cd example && npm start"
+  },
+  "keywords": [
+    "react-native",
+    "payments",
+    "apple-pay",
+    "google-pay",
+    "tuna",
+    "gateway",
+    "credit-card",
+    "tokenization",
+    "pci",
+    "mobile-payments"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://gitlab.dev.tuna.awc/plugins-ecommerce/react-native.git"
+  },
+  "author": "Tuna Software Inc",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://gitlab.dev.tuna.awc/plugins-ecommerce/react-native/-/issues"
+  },
+  "homepage": "https://docs.tuna.com.uy/react-native",
+  "peerDependencies": {
+    "@rnw-community/react-native-payments": "^1.6.0",
+    "react": ">=17.0.0",
+    "react-native": ">=0.64.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.22.0",
+    "@babel/preset-env": "^7.22.0",
+    "@babel/preset-typescript": "^7.22.0",
+    "@rollup/plugin-babel": "^6.0.0",
+    "@rollup/plugin-commonjs": "^25.0.0",
+    "@rollup/plugin-node-resolve": "^15.0.0",
+    "@rollup/plugin-typescript": "^11.0.0",
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.4.0",
+    "@types/react": "^18.2.0",
+    "@types/react-native": "^0.72.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.44.0",
+    "eslint-config-prettier": "^8.8.0",
+    "eslint-plugin-react": "^7.32.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "jest": "^29.5.0",
+    "prettier": "^3.0.0",
+    "react": "^18.2.0",
+    "react-native": "^0.72.0",
+    "rollup": "^3.26.0",
+    "rollup-plugin-dts": "^5.3.0",
+    "typescript": "^5.1.0"
+  },
+  "dependencies": {
+    "card-validator": "^8.1.1"
+  },
+  "eslintConfig": {
+    "root": true,
+    "extends": [
+      "@react-native-community",
+      "prettier"
+    ],
+    "parser": "@typescript-eslint/parser",
+    "plugins": [
+      "@typescript-eslint"
+    ],
+    "rules": {
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          "argsIgnorePattern": "^_"
+        }
+      ]
+    }
+  },
+  "prettier": {
+    "semi": true,
+    "trailingComma": "es5",
+    "singleQuote": true,
+    "printWidth": 100,
+    "tabWidth": 2
+  }
+}

@@ -1,0 +1,1478 @@
+/**
+ * Complete Tuna Native Payments Example with REAL Tuna SDK Integration
+ * Supports Apple Pay, Google Pay, Credit Cards (3DS), and PIX payments
+ * Uses the actual Tuna React Native SDK with real API calls
+ */
+
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  Alert,
+  StyleSheet,
+  Platform,
+  ActivityIndicator,
+  ScrollView,
+  TextInput,
+  Switch,
+} from 'react-native';
+
+// Import the REAL Tuna SDK with actual API implementation
+import { TunaReactNative, TunaReactNativeConfig } from './src/TunaReactNativeReal';
+import type { 
+  ApplePayConfig,
+  GooglePayConfig
+} from './src/types/payment';
+
+// Tab navigation types
+type PaymentTab = 'applePay' | 'googlePay' | 'creditCard' | 'pix';
+
+interface CreditCardDetails {
+  number: string;
+  expiryMonth: string;
+  expiryYear: string;
+  cvv: string;
+  holderName: string;
+  saveCard?: boolean;
+}
+
+interface CustomerInfo {
+  name: string;
+  email: string;
+  document: string;
+  phone: string;
+}
+
+// Configuration using REAL session from Tuna backend
+const TUNA_CONFIG: TunaReactNativeConfig = {
+  // environment defaults to 'production' now
+  debug: true,
+  sessionTimeout: 30 * 60 * 1000, // 30 minutes
+};
+
+// REAL session ID from Tuna - this should come from your backend
+const REAL_SESSION_ID = '30p6uerv7PGhzitZRUmmLpvWskqbk2EfhOQc9HqyUOMVcPCvXLoVSDBTAEdChO6nUFMTOYU/r/O+UJUzfXq/2WY+a2wJFDSZjtjwEmPi+QxBok6DNIjuMAzzt9O/k0AAkJpHbza2pMmoMN229JLRAzQu5gcJpCSt6dyvQAwrbBmbcHCLWU3h4P0ujH51';
+
+export default function TunaPaymentExample() {
+  // Session management state
+  const [sessionId, setSessionId] = useState(REAL_SESSION_ID);
+  const [isSessionConfigured, setIsSessionConfigured] = useState(false);
+  
+  // SDK state - using REAL TunaReactNative instance with actual API calls
+  const [sdk, setSdk] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [status, setStatus] = useState('Enter session ID to initialize REAL Tuna SDK');
+  const [applePayAvailable, setApplePayAvailable] = useState(false);
+  const [googlePayAvailable, setGooglePayAvailable] = useState(false);
+
+  // UI state
+  const [activeTab, setActiveTab] = useState<PaymentTab>('applePay');
+  const [amount, setAmount] = useState('1');
+  const [currency, setCurrency] = useState('BRL');
+
+  // Credit card state
+  const [cardNumber, setCardNumber] = useState('5555555555554444');
+  const [expiryMonth, setExpiryMonth] = useState('01');
+  const [expiryYear, setExpiryYear] = useState('30');
+  const [cvv, setCvv] = useState('123');
+  const [holderName, setHolderName] = useState('Authorized');
+  const [saveCard, setSaveCard] = useState(false);
+  const [enable3DS, setEnable3DS] = useState(true);
+
+  // Customer info for credit card
+  const [customerNameCC, setCustomerNameCC] = useState('John Doe');
+  const [customerEmailCC, setCustomerEmailCC] = useState('john.doe@example.com');
+
+  // Customer info for PIX
+  const [customerName, setCustomerName] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [customerDocument, setCustomerDocument] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+
+  // PIX result state
+  const [pixResult, setPixResult] = useState<{ qrCode: string; paymentKey: string; expiresAt: Date } | null>(null);
+  const [pixStatus, setPixStatus] = useState<string>('');
+  const [isPollingPix, setIsPollingPix] = useState(false);
+
+  // Payment processing state
+  const [paymentInProgress, setPaymentInProgress] = useState(false);
+  const [currentPaymentId, setCurrentPaymentId] = useState<string>('');
+  const [paymentResult, setPaymentResult] = useState<any>(null);
+
+  // Initialize SDK manually after session ID is provided
+  // useEffect(() => {
+  //   initializeSDK();
+  // }, []);
+
+  // Auto-select available payment method
+  useEffect(() => {
+    if (Platform.OS === 'ios' && applePayAvailable) {
+      setActiveTab('applePay');
+    } else if (Platform.OS === 'android' && googlePayAvailable) {
+      setActiveTab('googlePay');
+    } else {
+      setActiveTab('creditCard');
+    }
+  }, [applePayAvailable, googlePayAvailable]);
+
+  const initializeSDK = async () => {
+    try {
+      if (!sessionId.trim()) {
+        Alert.alert('Error', 'Please enter a valid session ID');
+        return;
+      }
+      
+      setIsLoading(true);
+      setStatus('Initializing REAL Tuna SDK...');
+
+      // Create REAL TunaReactNative instance
+      console.log('🚀 Creating TunaReactNative instance with config:', TUNA_CONFIG);
+      const tunaSDK = new TunaReactNative(TUNA_CONFIG);
+      
+      console.log('🔑 Initializing with session ID:', sessionId.substring(0, 20) + '...');
+      await tunaSDK.initialize(sessionId);
+      setSdk(tunaSDK);
+      setIsSessionConfigured(true);
+      
+      setStatus('REAL Tuna SDK initialized successfully!');
+      console.log('✅ SDK initialized successfully');
+
+      // Check REAL platform availability
+      if (Platform.OS === 'ios') {
+        console.log('🍎 Checking Apple Pay availability...');
+        const canMakeApplePay = await tunaSDK.canMakeApplePayPayments();
+        setApplePayAvailable(canMakeApplePay);
+        console.log('🍎 Apple Pay available:', canMakeApplePay);
+        
+        if (canMakeApplePay) {
+          await tunaSDK.setupApplePay({
+            merchantIdentifier: 'merchant.uy.tunahmlg',
+            supportedNetworks: ['visa', 'mastercard', 'amex'],
+            countryCode: 'BR',
+            currencyCode: 'BRL',
+          });
+          setStatus('Apple Pay configured with REAL SDK');
+          console.log('🍎 Apple Pay setup completed');
+        }
+      }
+
+      if (Platform.OS === 'android') {
+        console.log('🤖 Checking Google Pay availability...');
+        const isGooglePayReady = await tunaSDK.isGooglePayReady();
+        setGooglePayAvailable(isGooglePayReady);
+        console.log('🤖 Google Pay ready:', isGooglePayReady);
+        
+        if (isGooglePayReady) {
+          await tunaSDK.setupGooglePay({
+            environment: 'TEST',
+            apiVersion: 2,
+            apiVersionMinor: 0,
+            merchantInfo: {
+              merchantName: 'Tuna Demo Store',
+            },
+            tokenizationSpecification: {
+              type: 'PAYMENT_GATEWAY',
+              parameters: {
+                gateway: 'tuna',
+                gatewayMerchantId: 'BCR2DN6TR7QYLIKK',
+              },
+            },
+            allowedCardNetworks: ['VISA', 'MASTERCARD', 'AMEX'],
+            allowedAuthMethods: ['PAN_ONLY', 'CRYPTOGRAM_3DS'],
+          });
+          setStatus('Google Pay configured with REAL SDK');
+          console.log('🤖 Google Pay setup completed');
+        }
+      }
+
+      setStatus('REAL Tuna SDK ready for payments!');
+    } catch (error) {
+      console.error('❌ REAL SDK initialization error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setStatus(`REAL SDK Error: ${errorMessage}`);
+      Alert.alert('REAL SDK Initialization Error', errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleApplePay = async () => {
+    console.log('🍎 Apple Pay button clicked!');
+    Alert.alert('Debug', '🍎 Apple Pay button was clicked! Check console for logs.');
+    
+    if (!sdk) {
+      console.log('❌ SDK not initialized');
+      Alert.alert('Error', 'SDK not initialized');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setStatus('Processing Apple Pay...');
+      console.log('🍎 Starting Apple Pay with amount:', amount);
+
+      const result = await sdk.showApplePaySheet({
+        amount: parseFloat(amount),
+        currencyCode: currency,
+        countryCode: 'US',
+        total: { 
+          label: 'Purchase', 
+          amount: { currency, value: amount }
+        },
+      });
+
+      console.log('🍎 Apple Pay result:', result);
+
+      if (result.success) {
+        setStatus('Apple Pay payment successful!');
+        Alert.alert(
+          'Mock Payment Successful! 🎉',
+          `⚠️ This is MOCK data from the SDK:\n\nPayment ID: ${result.paymentId}\nToken: ${result.applePayToken}\nStatus: ${result.status}\n\n📱 The SDK needs real payment integration!`,
+          [{ text: 'OK' }]
+        );
+      } else {
+        setStatus('Apple Pay payment failed');
+        Alert.alert('Payment Failed', result.error || 'Unknown error');
+      }
+    } catch (error) {
+      console.error('Apple Pay error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setStatus(`Apple Pay error: ${errorMessage}`);
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGooglePay = async () => {
+    console.log('🤖 Google Pay button clicked!');
+    if (!sdk) {
+      console.log('❌ SDK not initialized');
+      Alert.alert('Error', 'SDK not initialized');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setStatus('Processing Google Pay...');
+      console.log('🤖 Starting Google Pay with amount:', amount);
+
+      const result = await sdk.requestGooglePayment({
+        amount: parseFloat(amount),
+        currencyCode: currency,
+        countryCode: 'US',
+        total: { 
+          label: 'Purchase', 
+          amount: { currency, value: amount }
+        },
+      });
+
+      if (result.success) {
+        setStatus('Google Pay payment successful!');
+        Alert.alert(
+          'Payment Successful! 🎉',
+          `Transaction ID: ${result.transactionId}\nToken: ${result.token?.substring(0, 20)}...`,
+          [{ text: 'OK' }]
+        );
+      } else {
+        setStatus('Google Pay payment failed');
+        Alert.alert('Payment Failed', result.error || 'Unknown error');
+      }
+    } catch (error) {
+      console.error('Google Pay error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setStatus(`Google Pay error: ${errorMessage}`);
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCreditCard = async () => {
+    console.log('💳 Credit Card button clicked!');
+    if (!sdk) {
+      console.log('❌ SDK not initialized');
+      Alert.alert('Error', 'SDK not initialized');
+      return;
+    }
+
+    // Check if payment already in progress
+    if (paymentInProgress) {
+      Alert.alert('Warning', 'A payment is already in progress. Please wait...');
+      return;
+    }
+
+    // Validation
+    if (!cardNumber || !expiryMonth || !expiryYear || !cvv || !holderName) {
+      Alert.alert('Validation Error', 'Please fill in all credit card fields');
+      return;
+    }
+
+    if (!customerNameCC || !customerEmailCC) {
+      Alert.alert('Validation Error', 'Please fill in customer information');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setPaymentInProgress(true);
+      setPaymentResult(null);
+      setStatus('🔄 Processing credit card payment...');
+      console.log('💳 Processing credit card:', { cardNumber, holderName });
+
+      // Use the real credit card payment API
+      const result = await sdk.processCreditCardPayment(
+        parseFloat(amount),
+        {
+          cardNumber: cardNumber,
+          cardHolderName: holderName,
+          expirationMonth: expiryMonth,
+          expirationYear: expiryYear.length === 2 ? `20${expiryYear}` : expiryYear,
+          cvv: cvv,
+        },
+        1, // installments
+        saveCard,
+        {
+          name: customerNameCC,
+          email: customerEmailCC,
+        }
+      );
+
+      console.log('💳 Credit Card result:', result);
+      setPaymentResult(result);
+
+      if (result.success && result.paymentKey && result.methodId) {
+        setCurrentPaymentId(result.paymentId);
+        setStatus('🔄 Payment initiated, checking status...');
+        
+        // Start status polling for final result
+        console.log('🔄 Starting status polling...');
+        await sdk.startStatusPolling(
+          result.paymentKey,
+          result.methodId,
+          (statusUpdate: any) => {
+            console.log('� Payment status update:', statusUpdate);
+            handlePaymentStatusUpdate(statusUpdate, result);
+          }
+        );
+      } else if (result.success) {
+        setStatus('✅ Credit card payment successful!');
+        Alert.alert('Payment Successful! 🎉', 'Your payment has been processed successfully.');
+      } else {
+        setStatus('❌ Credit card payment failed');
+        Alert.alert('Payment Failed', result.error?.message || 'Credit card payment was not successful');
+      }
+    } catch (error) {
+      console.error('Credit card error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setStatus(`❌ Credit card error: ${errorMessage}`);
+      setPaymentResult({ success: false, error: errorMessage });
+      Alert.alert('Real API Error', `This is a real error from Tuna API:\n\n${errorMessage}`);
+    } finally {
+      setIsLoading(false);
+      setPaymentInProgress(false);
+    }
+  };
+
+  // Handle payment status updates from polling
+  const handlePaymentStatusUpdate = (statusUpdate: any, originalResult: any) => {
+    console.log('📊 Processing status update:', statusUpdate);
+    
+    // Payment status codes from https://dev.tuna.uy/api/tuna-codes#payment-status
+    const statusCodes: Record<string, { status: string; message: string; type: string }> = {
+      '2': { status: 'approved', message: '✅ Payment Approved!', type: 'success' },
+      '4': { status: 'denied', message: '❌ Payment Denied', type: 'error' },
+      '5': { status: 'cancelled', message: '🚫 Payment Cancelled', type: 'warning' },
+      '8': { status: 'approved', message: '✅ Payment Approved!', type: 'success' },
+      'A': { status: 'denied', message: '❌ Payment Denied (Anti-fraud)', type: 'error' },
+      'N': { status: 'denied', message: '❌ Payment Denied (Network)', type: 'error' },
+    };
+
+    const statusInfo = statusCodes[statusUpdate.paymentStatusFound] || 
+                      { status: 'unknown', message: `⚠️ Unknown status: ${statusUpdate.paymentStatusFound}`, type: 'warning' };
+
+    console.log('📊 Status interpretation:', statusInfo);
+
+    // Update the result state
+    setPaymentResult({
+      ...originalResult,
+      finalStatus: statusInfo.status,
+      statusMessage: statusInfo.message,
+      statusCode: statusUpdate.paymentStatusFound,
+      paymentApproved: statusUpdate.paymentApproved
+    });
+
+    // Update status display
+    setStatus(statusInfo.message);
+
+    // Show appropriate alert
+    if (statusInfo.type === 'success') {
+      Alert.alert(
+        'Payment Successful! 🎉', 
+        `${statusInfo.message}\n\nPayment ID: ${originalResult.paymentId}\nStatus Code: ${statusUpdate.paymentStatusFound}`
+      );
+    } else if (statusInfo.type === 'error') {
+      Alert.alert(
+        'Payment Failed', 
+        `${statusInfo.message}\n\nPayment ID: ${originalResult.paymentId}\nStatus Code: ${statusUpdate.paymentStatusFound}\n\nPlease try again or use a different payment method.`
+      );
+    } else {
+      Alert.alert('Payment Status', `${statusInfo.message}\n\nStatus Code: ${statusUpdate.paymentStatusFound}`);
+    }
+  };
+
+  const handlePIX = async () => {
+    console.log('🏦 PIX button clicked!');
+    if (!sdk) {
+      console.log('❌ SDK not initialized');
+      Alert.alert('Error', 'SDK not initialized');
+      return;
+    }
+
+    // Validation
+    if (!customerName || !customerEmail || !customerDocument) {
+      Alert.alert('Validation Error', 'Please fill in customer information for PIX');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setPaymentInProgress(true);
+      setStatus('Generating PIX payment...');
+      console.log('🏦 Generating PIX for customer:', { customerName, customerEmail });
+
+      // Use the real PIX payment API
+      const result = await sdk.generatePIXPayment(
+        parseFloat(amount),
+        {
+          name: customerName,
+          email: customerEmail,
+          document: customerDocument,
+          phone: customerPhone
+        }
+      );
+
+      console.log('🏦 PIX result:', result);
+
+      if (result.success && result.paymentKey) {
+        setPixResult({
+          qrCode: result.qrCode || '',
+          paymentKey: result.paymentKey,
+          expiresAt: new Date(result.expiresAt || Date.now() + 30 * 60 * 1000)
+        });
+        
+        setCurrentPaymentId(result.paymentKey);
+        setPixStatus('pending');
+        setStatus('PIX QR Code generated - waiting for payment...');
+        
+        // Start polling for payment status
+        setIsPollingPix(true);
+        await sdk.startStatusPolling(
+          result.paymentKey,
+          '', // methodId not needed for PIX
+          (statusUpdate: any) => {
+            console.log('📊 PIX Status update:', statusUpdate);
+            
+            if (statusUpdate.status === 'approved' || statusUpdate.paymentApproved === true) {
+              setPixStatus('approved');
+              setStatus('PIX payment approved! ✅');
+              setIsPollingPix(false);
+              Alert.alert(
+                'PIX Payment Successful! 🎉',
+                'Your PIX payment has been approved and processed.',
+                [{ text: 'OK' }]
+              );
+            } else if (statusUpdate.status === 'declined' || statusUpdate.paymentApproved === false) {
+              setPixStatus('declined');
+              setStatus('PIX payment declined ❌');
+              setIsPollingPix(false);
+              Alert.alert(
+                'PIX Payment Declined',
+                'Your PIX payment was declined. Please try again.',
+                [{ text: 'OK' }]
+              );
+            } else if (statusUpdate.status === 'timeout') {
+              setPixStatus('timeout');
+              setStatus('PIX payment timeout - please check manually');
+              setIsPollingPix(false);
+              Alert.alert(
+                'PIX Payment Timeout',
+                'PIX payment monitoring timed out. Please check your banking app or try again.',
+                [{ text: 'OK' }]
+              );
+            } else if (statusUpdate.status === 'error') {
+              setPixStatus('error');
+              setStatus('PIX status check error');
+              setIsPollingPix(false);
+            } else {
+              setPixStatus('pending');
+              setStatus('PIX payment pending - waiting for confirmation...');
+            }
+          },
+          { maxAttempts: 60, intervalMs: 5000 } // Poll for 5 minutes
+        );
+
+        Alert.alert(
+          'Real PIX Generated! 🇧🇷',
+          `✅ PIX QR Code generated successfully!\n\n📱 Scan the QR code below with your banking app to complete the payment.\n\n⏱️ Monitoring payment status in real-time...`,
+          [{ text: 'OK' }]
+        );
+      } else {
+        throw new Error('PIX generation failed');
+      }
+    } catch (error) {
+      console.error('PIX error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setStatus(`PIX error: ${errorMessage}`);
+      setPaymentInProgress(false);
+      Alert.alert('Real API Error', `This is a real error from Tuna API:\n\n${errorMessage}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const renderTabs = () => {
+    const tabs = [
+      { key: 'applePay', label: '🍎 Apple Pay', available: Platform.OS === 'ios' && applePayAvailable },
+      { key: 'googlePay', label: '🤖 Google Pay', available: Platform.OS === 'android' && googlePayAvailable },
+      { key: 'creditCard', label: '💳 Credit Card', available: true },
+      { key: 'pix', label: '🇧🇷 PIX', available: true },
+    ];
+
+    return (
+      <View style={styles.tabContainer}>
+        {tabs.map(tab => (
+          <TouchableOpacity
+            key={tab.key}
+            style={[
+              styles.tab,
+              activeTab === tab.key && styles.activeTab,
+              !tab.available && styles.disabledTab
+            ]}
+            onPress={() => tab.available && setActiveTab(tab.key as PaymentTab)}
+            disabled={!tab.available}
+          >
+            <Text style={[
+              styles.tabText,
+              activeTab === tab.key && styles.activeTabText,
+              !tab.available && styles.disabledTabText
+            ]}>
+              {tab.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  };
+
+  const renderApplePayTab = () => (
+    <View style={styles.tabContent}>
+      <Text style={styles.tabTitle}>Apple Pay Payment</Text>
+      <Text style={styles.description}>
+        Use Touch ID, Face ID, or passcode to authorize payment with Apple Pay.
+      </Text>
+      
+      <TouchableOpacity
+        style={[styles.paymentButton, styles.applePayButton]}
+        onPress={handleApplePay}
+        disabled={isLoading}
+      >
+        <Text style={styles.applePayButtonText}>🍎 Pay with Apple Pay</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderGooglePayTab = () => (
+    <View style={styles.tabContent}>
+      <Text style={styles.tabTitle}>Google Pay Payment</Text>
+      <Text style={styles.description}>
+        Pay quickly and securely with Google Pay using your saved payment methods.
+      </Text>
+      
+      <TouchableOpacity
+        style={[styles.paymentButton, styles.googlePayButton]}
+        onPress={handleGooglePay}
+        disabled={isLoading}
+      >
+        <Text style={styles.googlePayButtonText}>G Pay with Google Pay</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderCreditCardTab = () => (
+    <View style={styles.tabContent}>
+      <Text style={styles.tabTitle}>Credit Card Payment</Text>
+      <Text style={styles.description}>
+        Enter your credit card details. 3DS authentication provides extra security.
+      </Text>
+      
+      {/* Customer Information */}
+      <Text style={[styles.label, styles.sectionTitle]}>Customer Information</Text>
+      
+      <View style={styles.formGroup}>
+        <Text style={styles.label}>Customer Name</Text>
+        <TextInput
+          style={styles.input}
+          value={customerNameCC}
+          onChangeText={setCustomerNameCC}
+          placeholder="Customer name (pre-filled)"
+          autoCapitalize="words"
+        />
+      </View>
+
+      <View style={styles.formGroup}>
+        <Text style={styles.label}>Customer Email</Text>
+        <TextInput
+          style={styles.input}
+          value={customerEmailCC}
+          onChangeText={setCustomerEmailCC}
+          placeholder="Customer email (pre-filled)"
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
+      </View>
+
+      {/* Card Information */}
+      <Text style={[styles.label, styles.sectionTitle]}>Card Information</Text>
+      
+      <View style={styles.formGroup}>
+        <Text style={styles.label}>Card Number</Text>
+        <TextInput
+          style={styles.input}
+          value={cardNumber}
+          onChangeText={setCardNumber}
+                        placeholder="Card number (pre-filled for testing)"
+          keyboardType="numeric"
+          maxLength={19}
+        />
+      </View>
+
+      <View style={styles.row}>
+        <View style={[styles.formGroup, styles.halfWidth]}>
+          <Text style={styles.label}>Expiry Month</Text>
+          <TextInput
+            style={styles.input}
+            value={expiryMonth}
+            onChangeText={setExpiryMonth}
+                          placeholder="MM (pre-filled)"
+            keyboardType="numeric"
+            maxLength={2}
+          />
+        </View>
+        
+        <View style={[styles.formGroup, styles.halfWidth]}>
+          <Text style={styles.label}>Expiry Year</Text>
+          <TextInput
+            style={styles.input}
+            value={expiryYear}
+            onChangeText={setExpiryYear}
+            placeholder="YY (pre-filled)"
+            keyboardType="numeric"
+            maxLength={2}
+          />
+        </View>
+      </View>
+
+      <View style={styles.formGroup}>
+        <Text style={styles.label}>CVV</Text>
+        <TextInput
+          style={styles.input}
+          value={cvv}
+          onChangeText={setCvv}
+                        placeholder="CVV (pre-filled)"
+          keyboardType="numeric"
+          maxLength={4}
+          secureTextEntry
+        />
+      </View>
+
+      <View style={styles.formGroup}>
+        <Text style={styles.label}>Cardholder Name</Text>
+        <TextInput
+          style={styles.input}
+          value={holderName}
+          onChangeText={setHolderName}
+                        placeholder="Cardholder name (pre-filled)"
+          autoCapitalize="words"
+        />
+      </View>
+
+      <View style={styles.switchRow}>
+        <Text style={styles.switchLabel}>Enable 3D Secure</Text>
+        <Switch value={enable3DS} onValueChange={setEnable3DS} />
+      </View>
+
+      <View style={styles.switchRow}>
+        <Text style={styles.switchLabel}>Save card for future payments</Text>
+        <Switch value={saveCard} onValueChange={setSaveCard} />
+      </View>
+
+      <TouchableOpacity
+        style={[
+          styles.paymentButton, 
+          styles.creditCardButton,
+          (isLoading || paymentInProgress) && styles.disabledPaymentButton
+        ]}
+        onPress={handleCreditCard}
+        disabled={isLoading || paymentInProgress}
+      >
+        {(isLoading || paymentInProgress) ? (
+          <View style={styles.loadingButtonContent}>
+            <ActivityIndicator size="small" color="#FFFFFF" />
+            <Text style={styles.creditCardButtonText}>Processing...</Text>
+          </View>
+        ) : (
+          <Text style={styles.creditCardButtonText}>💳 Pay with Credit Card</Text>
+        )}
+      </TouchableOpacity>
+
+      {/* Payment Result Display */}
+      {paymentResult && (
+        <View style={[
+          styles.paymentResultContainer,
+          paymentResult.success 
+            ? (paymentResult.finalStatus === 'approved' ? styles.successResult : styles.pendingResult)
+            : styles.errorResult
+        ]}>
+          <Text style={styles.resultTitle}>
+            {paymentResult.success 
+              ? (paymentResult.finalStatus === 'approved' ? '✅ Payment Successful' 
+                 : paymentResult.finalStatus === 'denied' ? '❌ Payment Denied'
+                 : '🔄 Payment Processing')
+              : '❌ Payment Failed'}
+          </Text>
+          {paymentResult.paymentId && (
+            <Text style={styles.resultDetail}>Payment ID: {paymentResult.paymentId}</Text>
+          )}
+          {paymentResult.statusCode && (
+            <Text style={styles.resultDetail}>Status Code: {paymentResult.statusCode}</Text>
+          )}
+          {paymentResult.statusMessage && (
+            <Text style={styles.resultMessage}>{paymentResult.statusMessage}</Text>
+          )}
+        </View>
+      )}
+
+      {/* Credit Card Payment Status */}
+      {paymentInProgress && currentPaymentId && (
+        <View style={styles.statusContainer}>
+          <Text style={styles.statusTitle}>Payment Processing</Text>
+          <Text style={styles.statusText}>{status}</Text>
+          <ActivityIndicator size="small" color="#007AFF" style={styles.loader} />
+        </View>
+      )}
+    </View>
+  );
+
+  const renderPIXTab = () => (
+    <View style={styles.tabContent}>
+      <Text style={styles.tabTitle}>PIX Payment (Brazil)</Text>
+      <Text style={styles.description}>
+        PIX is Brazil's instant payment system. Complete customer information to generate QR code.
+      </Text>
+      
+      <View style={styles.formGroup}>
+        <Text style={styles.label}>Full Name *</Text>
+        <TextInput
+          style={styles.input}
+          value={customerName}
+          onChangeText={setCustomerName}
+          placeholder="João Silva"
+          autoCapitalize="words"
+        />
+      </View>
+
+      <View style={styles.formGroup}>
+        <Text style={styles.label}>Email *</Text>
+        <TextInput
+          style={styles.input}
+          value={customerEmail}
+          onChangeText={setCustomerEmail}
+          placeholder="joao@example.com"
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
+      </View>
+
+      <View style={styles.formGroup}>
+        <Text style={styles.label}>Document (CPF/CNPJ) *</Text>
+        <TextInput
+          style={styles.input}
+          value={customerDocument}
+          onChangeText={setCustomerDocument}
+          placeholder="123.456.789-00"
+          keyboardType="numeric"
+        />
+      </View>
+
+      <View style={styles.formGroup}>
+        <Text style={styles.label}>Phone (Optional)</Text>
+        <TextInput
+          style={styles.input}
+          value={customerPhone}
+          onChangeText={setCustomerPhone}
+          placeholder="+55 11 99999-9999"
+          keyboardType="phone-pad"
+        />
+      </View>
+
+      <TouchableOpacity
+        style={[styles.paymentButton, styles.pixButton]}
+        onPress={handlePIX}
+        disabled={isLoading}
+      >
+        <Text style={styles.pixButtonText}>🇧🇷 Generate PIX QR Code</Text>
+      </TouchableOpacity>
+
+      {pixResult && (
+        <View style={styles.pixResult}>
+          <Text style={styles.pixResultTitle}>PIX QR Code Generated! 🎉</Text>
+          
+          {/* PIX Status */}
+          <View style={styles.pixStatusContainer}>
+            <Text style={styles.pixStatusLabel}>Payment Status:</Text>
+            <Text style={[
+              styles.pixStatusText,
+              pixStatus === 'approved' && styles.statusApproved,
+              pixStatus === 'declined' && styles.statusDeclined,
+              pixStatus === 'timeout' && styles.statusTimeout,
+              pixStatus === 'error' && styles.statusError,
+              pixStatus === 'pending' && styles.statusPending
+            ]}>
+              {pixStatus === 'approved' && '✅ APPROVED'}
+              {pixStatus === 'declined' && '❌ DECLINED'}
+              {pixStatus === 'timeout' && '⏰ TIMEOUT'}
+              {pixStatus === 'error' && '⚠️ ERROR'}
+              {pixStatus === 'pending' && '⏳ PENDING'}
+            </Text>
+          </View>
+
+          {/* Real-time polling indicator */}
+          {isPollingPix && (
+            <View style={styles.pollingIndicator}>
+              <ActivityIndicator size="small" color="#007AFF" />
+              <Text style={styles.pollingText}>
+                🔄 Monitoring payment status in real-time...
+              </Text>
+            </View>
+          )}
+
+          <Text style={styles.pixResultText}>
+            Expires: {pixResult.expiresAt.toLocaleString()}
+          </Text>
+          
+          <View style={styles.qrCodeContainer}>
+            <Text style={styles.qrCodePlaceholder}>📱 QR CODE</Text>
+            <Text style={styles.qrCodeNote}>
+              Scan with your banking app to complete payment
+            </Text>
+            
+            {/* QR Code visual representation */}
+            <View style={styles.qrCodeVisual}>
+              <Text style={styles.qrCodeArt}>
+                █████████████████████████{'\n'}
+                █ ▄▄▄▄▄ █▀█ █▄▄▄█ ▄▄▄▄▄ █{'\n'}
+                █ █   █ █▀▀ █▄ ▄█ █   █ █{'\n'}
+                █ █▄▄▄█ █▀▀▀█▀█▀█ █▄▄▄█ █{'\n'}
+                █▄▄▄▄▄▄▄█▄▀ ▀ ▀▄█▄▄▄▄▄▄▄█{'\n'}
+                █▄▄█▄▄▄▄▀▄▄▄██▄▄▄▄▀█▄▄▄▄█{'\n'}
+                ██ ▄▄▄█▄▄█▄█▄ █▄▄▄██▄█▄▄█{'\n'}
+                ██▄▄▄▄▄▄▄█▄▄▄██▄▄ ▀▄▄▄▄██{'\n'}
+                █████████████████████████
+              </Text>
+            </View>
+          </View>
+          
+          <Text style={styles.pixCodeLabel}>PIX Code (Copy/Paste):</Text>
+          <Text style={styles.pixCode} selectable>
+            {pixResult.qrCode}
+          </Text>
+          
+          <Text style={styles.pixInstructions}>
+            💡 You can either scan the QR code above or copy the PIX code to your banking app
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'applePay':
+        return renderApplePayTab();
+      case 'googlePay':
+        return renderGooglePayTab();
+      case 'creditCard':
+        return renderCreditCardTab();
+      case 'pix':
+        return renderPIXTab();
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <ScrollView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>💰 Tuna Payments</Text>
+        <Text style={styles.subtitle}>Real Payment Processing</Text>
+      </View>
+
+      {!isSessionConfigured && (
+        <View style={styles.sessionCard}>
+          <Text style={styles.cardTitle}>Session Configuration</Text>
+          <Text style={styles.sessionDescription}>
+            Enter your Tuna session ID to initialize the SDK
+          </Text>
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Session ID</Text>
+            <TextInput
+              style={[styles.input, styles.sessionInput]}
+              value={sessionId}
+              onChangeText={setSessionId}
+              placeholder="Enter Tuna session ID..."
+              multiline={true}
+              numberOfLines={3}
+              textAlignVertical="top"
+            />
+          </View>
+          <TouchableOpacity
+            style={[styles.button, styles.primaryButton, isLoading && styles.disabledButton]}
+            onPress={initializeSDK}
+            disabled={isLoading || !sessionId.trim()}
+          >
+            {isLoading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.buttonText}>Initialize SDK</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {isSessionConfigured && (
+        <View style={styles.sessionCard}>
+          <Text style={styles.cardTitle}>Session Active</Text>
+          <Text style={styles.sessionId}>
+            Session: {sessionId.substring(0, 20)}...
+          </Text>
+          <TouchableOpacity
+            style={[styles.button, styles.secondaryButton]}
+            onPress={() => {
+              setIsSessionConfigured(false);
+              setSdk(null);
+              setStatus('Enter session ID to initialize REAL Tuna SDK');
+            }}
+          >
+            <Text style={styles.secondaryButtonText}>Change Session</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <View style={styles.statusCard}>
+        <Text style={styles.statusLabel}>Status:</Text>
+        <Text style={styles.statusText}>{status}</Text>
+        {isLoading && (
+          <ActivityIndicator size="small" color="#007AFF" style={styles.loader} />
+        )}
+      </View>
+
+      {isSessionConfigured && (
+        <>
+          <View style={styles.amountCard}>
+            <Text style={styles.cardTitle}>Payment Amount</Text>
+            <View style={styles.row}>
+              <View style={[styles.formGroup, styles.flexGrow]}>
+                <Text style={styles.label}>Amount</Text>
+                <TextInput
+                  style={styles.input}
+                  value={amount}
+                  onChangeText={setAmount}
+                  placeholder="0.00"
+                  keyboardType="decimal-pad"
+                />
+              </View>
+              <View style={[styles.formGroup, styles.currencyGroup]}>
+                <Text style={styles.label}>Currency</Text>
+                <TextInput
+                  style={styles.input}
+                  value={currency}
+                  onChangeText={setCurrency}
+                  placeholder="BRL"
+                  maxLength={3}
+                  autoCapitalize="characters"
+                />
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.paymentMethodCard}>
+            <Text style={styles.cardTitle}>Payment Methods</Text>
+            {renderTabs()}
+            {renderTabContent()}
+          </View>
+        </>
+      )}
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  header: {
+    alignItems: 'center',
+    paddingVertical: 30,
+    paddingHorizontal: 20,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 5,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#666',
+  },
+  statusCard: {
+    backgroundColor: 'white',
+    margin: 20,
+    padding: 20,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  statusLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginRight: 10,
+    color: '#333',
+  },
+  statusText: {
+    fontSize: 14,
+    color: '#666',
+    flex: 1,
+  },
+  loader: {
+    marginLeft: 10,
+  },
+  amountCard: {
+    backgroundColor: 'white',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    padding: 20,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  paymentMethodCard: {
+    backgroundColor: 'white',
+    marginHorizontal: 20,
+    marginBottom: 30,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    overflow: 'hidden',
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 15,
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 15,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  activeTab: {
+    borderBottomColor: '#007AFF',
+    backgroundColor: '#f0f8ff',
+  },
+  disabledTab: {
+    opacity: 0.3,
+  },
+  tabText: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+  },
+  activeTabText: {
+    color: '#007AFF',
+    fontWeight: '600',
+  },
+  disabledTabText: {
+    color: '#ccc',
+  },
+  tabContent: {
+    padding: 20,
+  },
+  tabTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 10,
+  },
+  description: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  formGroup: {
+    marginBottom: 15,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 5,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    fontSize: 16,
+    backgroundColor: '#fff',
+  },
+  row: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  halfWidth: {
+    flex: 1,
+  },
+  flexGrow: {
+    flex: 1,
+  },
+  currencyGroup: {
+    width: 80,
+  },
+  switchRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+    paddingVertical: 5,
+  },
+  switchLabel: {
+    fontSize: 14,
+    color: '#333',
+    flex: 1,
+  },
+  paymentButton: {
+    paddingVertical: 15,
+    paddingHorizontal: 30,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  applePayButton: {
+    backgroundColor: '#000',
+  },
+  applePayButtonText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  googlePayButton: {
+    backgroundColor: '#4285F4',
+  },
+  googlePayButtonText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  creditCardButton: {
+    backgroundColor: '#6c757d',
+  },
+  creditCardButtonText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  pixButton: {
+    backgroundColor: '#32CD32',
+  },
+  pixButtonText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  pixResult: {
+    marginTop: 20,
+    padding: 15,
+    backgroundColor: '#f0fff0',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#90EE90',
+  },
+  pixResultTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#006400',
+    marginBottom: 5,
+  },
+  pixResultText: {
+    fontSize: 14,
+    color: '#006400',
+    marginBottom: 15,
+  },
+  qrCodeContainer: {
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    marginBottom: 15,
+  },
+  qrCodePlaceholder: {
+    fontSize: 48,
+    marginBottom: 10,
+  },
+  qrCodeNote: {
+    fontSize: 12,
+    color: '#666',
+  },
+  pixCode: {
+    fontSize: 10,
+    color: '#666',
+    fontFamily: 'monospace',
+    backgroundColor: '#f8f8f8',
+    padding: 10,
+    borderRadius: 5,
+  },
+  pixStatusContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+  },
+  pixStatusLabel: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  pixStatusText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  statusApproved: {
+    color: '#28a745',
+  },
+  statusDeclined: {
+    color: '#dc3545',
+  },
+  statusTimeout: {
+    color: '#ffc107',
+  },
+  statusError: {
+    color: '#dc3545',
+  },
+  statusPending: {
+    color: '#007bff',
+  },
+  pollingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 15,
+    paddingVertical: 10,
+    backgroundColor: '#e7f3ff',
+    borderRadius: 8,
+  },
+  pollingText: {
+    fontSize: 14,
+    color: '#007bff',
+    marginLeft: 10,
+    fontWeight: '500',
+  },
+  qrCodeVisual: {
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 20,
+    borderRadius: 8,
+    margin: 10,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  qrCodeArt: {
+    fontSize: 8,
+    fontFamily: 'monospace',
+    color: '#000',
+    lineHeight: 10,
+    textAlign: 'center',
+  },
+  pixCodeLabel: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+    marginTop: 15,
+    marginBottom: 5,
+  },
+  pixInstructions: {
+    fontSize: 13,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 10,
+    fontStyle: 'italic',
+  },
+  statusContainer: {
+    backgroundColor: '#f8f9fa',
+    padding: 15,
+    borderRadius: 8,
+    marginTop: 15,
+    alignItems: 'center',
+  },
+  statusTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 5,
+  },
+  // Session ID styles
+  sessionCard: {
+    backgroundColor: 'white',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    padding: 20,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  sessionDescription: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 15,
+    lineHeight: 20,
+  },
+  sessionInput: {
+    height: 80,
+    textAlignVertical: 'top',
+    paddingTop: 10,
+  },
+  sessionId: {
+    fontSize: 12,
+    color: '#666',
+    fontFamily: 'monospace',
+    backgroundColor: '#f8f8f8',
+    padding: 10,
+    borderRadius: 5,
+    marginBottom: 15,
+  },
+  // Button styles
+  button: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+  primaryButton: {
+    backgroundColor: '#007AFF',
+  },
+  secondaryButton: {
+    backgroundColor: '#6c757d',
+  },
+  disabledButton: {
+    backgroundColor: '#cccccc',
+    opacity: 0.6,
+  },
+  buttonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  secondaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  // Payment loading and result styles
+  disabledPaymentButton: {
+    opacity: 0.6,
+    backgroundColor: '#cccccc',
+  },
+  loadingButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  paymentResultContainer: {
+    backgroundColor: '#f8f9fa',
+    padding: 15,
+    borderRadius: 8,
+    marginTop: 15,
+    borderWidth: 2,
+  },
+  successResult: {
+    borderColor: '#28a745',
+    backgroundColor: '#d4edda',
+  },
+  pendingResult: {
+    borderColor: '#ffc107',
+    backgroundColor: '#fff3cd',
+  },
+  errorResult: {
+    borderColor: '#dc3545',
+    backgroundColor: '#f8d7da',
+  },
+  resultTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  resultDetail: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4,
+  },
+  resultMessage: {
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  // Section title style
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginTop: 20,
+    marginBottom: 10,
+  },
+});
