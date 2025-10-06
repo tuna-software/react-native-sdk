@@ -9,7 +9,6 @@ import {
   View,
   Text,
   TouchableOpacity,
-  Alert,
   StyleSheet,
   Platform,
   ActivityIndicator,
@@ -17,6 +16,77 @@ import {
   TextInput,
   Switch,
 } from 'react-native';
+// Multi-approach clipboard functionality that works in different environments
+const copyToClipboard = async (text: string) => {
+  // Approach 1: Try web Clipboard API (works in web builds and some React Native WebView contexts)
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (error) {
+    // Silent fail, try next approach
+  }
+
+  // Approach 2: Try React Native's built-in Clipboard (if available)
+  try {
+    const { Clipboard: RNClipboard } = require('react-native');
+    if (RNClipboard && RNClipboard.setString) {
+      RNClipboard.setString(text);
+      return true;
+    }
+  } catch (error) {
+    // Silent fail
+  }
+
+  // Approach 3: Try expo-clipboard if available
+  try {
+    const ExpoClipboard = require('expo-clipboard');
+    if (ExpoClipboard && ExpoClipboard.setStringAsync) {
+      await ExpoClipboard.setStringAsync(text);
+      return true;
+    }
+  } catch (error) {
+    // Silent fail
+  }
+
+  // Fallback: log the content so user can manually copy
+  console.log('📋 Content to copy:', text);
+  return false;
+};
+
+const getFromClipboard = async (): Promise<string> => {
+  // Approach 1: Try web Clipboard API
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.readText) {
+      return await navigator.clipboard.readText();
+    }
+  } catch (error) {
+    // Silent fail, try next approach
+  }
+
+  // Approach 2: Try React Native's built-in Clipboard
+  try {
+    const { Clipboard: RNClipboard } = require('react-native');
+    if (RNClipboard && RNClipboard.getString) {
+      return await RNClipboard.getString();
+    }
+  } catch (error) {
+    // Silent fail
+  }
+
+  // Approach 3: Try expo-clipboard if available
+  try {
+    const ExpoClipboard = require('expo-clipboard');
+    if (ExpoClipboard && ExpoClipboard.getStringAsync) {
+      return await ExpoClipboard.getStringAsync();
+    }
+  } catch (error) {
+    // Silent fail
+  }
+
+  return '';
+};
 
 // Import the REAL Tuna SDK with actual API implementation
 import { TunaReactNative, TunaReactNativeConfig } from './src/TunaReactNativeReal';
@@ -24,6 +94,36 @@ import type {
   ApplePayConfig,
   GooglePayConfig
 } from './src/types/payment';
+
+// Import native 3DS handler (no WebViews)
+import { 
+  createNativeThreeDSHandler, 
+  extractThreeDSInfo, 
+  extractChallengeInfo,
+  type ThreeDSDataCollectionInfo,
+  type ThreeDSChallengeInfo 
+} from './src/ThreeDSNative';
+
+// Import enhanced native payments for 3DS challenges
+import { 
+  createNative3DSHandler,
+  handleNative3DSChallenge,
+  type ThreeDSChallengeConfig,
+  type ThreeDSNativeResult
+} from './src/ThreeDSNativePayments';
+
+// Import real 3DS challenge executor (Browser Redirect)
+import {
+  executeReal3DSChallenge,
+  type Real3DSChallengeConfig,
+  type Real3DSChallengeResult
+} from './src/ThreeDSBrowserChallenge';
+
+// Import ACS URL extractor
+import {
+  extractCompleteChallenge,
+  type ExtractedChallengeData
+} from './src/ThreeDSACSExtractor';
 
 // Tab navigation types
 type PaymentTab = 'applePay' | 'googlePay' | 'creditCard' | 'pix';
@@ -71,10 +171,10 @@ export default function TunaPaymentExample() {
   const [amount, setAmount] = useState('1');
   const [currency, setCurrency] = useState('BRL');
 
-  // Credit card state
-  const [cardNumber, setCardNumber] = useState('5555555555554444');
+  // Credit Card state
+  const [cardNumber, setCardNumber] = useState('4456530000001096');
   const [expiryMonth, setExpiryMonth] = useState('01');
-  const [expiryYear, setExpiryYear] = useState('30');
+  const [expiryYear, setExpiryYear] = useState('28');
   const [cvv, setCvv] = useState('123');
   const [holderName, setHolderName] = useState('Authorized');
   const [saveCard, setSaveCard] = useState(false);
@@ -100,6 +200,22 @@ export default function TunaPaymentExample() {
   const [currentPaymentId, setCurrentPaymentId] = useState<string>('');
   const [paymentResult, setPaymentResult] = useState<any>(null);
 
+  // Generate consistent partnerUniqueId for session matching
+  const [partnerUniqueId] = useState(() => {
+    const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+    return uuid;
+  });
+
+  // 3DS state management (native, no WebViews)
+  const [threeDSHandler] = useState(() => createNativeThreeDSHandler(true)); // debug enabled
+  const [isPerformingDataCollection, setIsPerformingDataCollection] = useState(false);
+  const [isPerformingChallenge, setIsPerformingChallenge] = useState(false);
+  const [threeDSStatus, setThreeDSStatus] = useState<string>('');
+
   // Initialize SDK manually after session ID is provided
   // useEffect(() => {
   //   initializeSDK();
@@ -119,7 +235,7 @@ export default function TunaPaymentExample() {
   const initializeSDK = async () => {
     try {
       if (!sessionId.trim()) {
-        Alert.alert('Error', 'Please enter a valid session ID');
+        console.log('Error', 'Please enter a valid session ID');
         return;
       }
       
@@ -191,7 +307,7 @@ export default function TunaPaymentExample() {
       console.error('❌ REAL SDK initialization error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setStatus(`REAL SDK Error: ${errorMessage}`);
-      Alert.alert('REAL SDK Initialization Error', errorMessage);
+      console.log('REAL SDK Initialization Error', errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -199,11 +315,11 @@ export default function TunaPaymentExample() {
 
   const handleApplePay = async () => {
     console.log('🍎 Apple Pay button clicked!');
-    Alert.alert('Debug', '🍎 Apple Pay button was clicked! Check console for logs.');
+    console.log('Debug', '🍎 Apple Pay button was clicked! Check console for logs.');
     
     if (!sdk) {
       console.log('❌ SDK not initialized');
-      Alert.alert('Error', 'SDK not initialized');
+      console.log('Error', 'SDK not initialized');
       return;
     }
 
@@ -215,7 +331,7 @@ export default function TunaPaymentExample() {
       const result = await sdk.showApplePaySheet({
         amount: parseFloat(amount),
         currencyCode: currency,
-        countryCode: 'US',
+        countryCode: 'BR',
         total: { 
           label: 'Purchase', 
           amount: { currency, value: amount }
@@ -226,20 +342,20 @@ export default function TunaPaymentExample() {
 
       if (result.success) {
         setStatus('Apple Pay payment successful!');
-        Alert.alert(
+        console.log(
           'Mock Payment Successful! 🎉',
           `⚠️ This is MOCK data from the SDK:\n\nPayment ID: ${result.paymentId}\nToken: ${result.applePayToken}\nStatus: ${result.status}\n\n📱 The SDK needs real payment integration!`,
           [{ text: 'OK' }]
         );
       } else {
         setStatus('Apple Pay payment failed');
-        Alert.alert('Payment Failed', result.error || 'Unknown error');
+        console.log('Payment Failed', result.error || 'Unknown error');
       }
     } catch (error) {
       console.error('Apple Pay error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setStatus(`Apple Pay error: ${errorMessage}`);
-      Alert.alert('Error', errorMessage);
+      console.log('Error', errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -249,7 +365,7 @@ export default function TunaPaymentExample() {
     console.log('🤖 Google Pay button clicked!');
     if (!sdk) {
       console.log('❌ SDK not initialized');
-      Alert.alert('Error', 'SDK not initialized');
+      console.log('Error', 'SDK not initialized');
       return;
     }
 
@@ -261,7 +377,7 @@ export default function TunaPaymentExample() {
       const result = await sdk.requestGooglePayment({
         amount: parseFloat(amount),
         currencyCode: currency,
-        countryCode: 'US',
+        countryCode: 'BR',
         total: { 
           label: 'Purchase', 
           amount: { currency, value: amount }
@@ -270,20 +386,20 @@ export default function TunaPaymentExample() {
 
       if (result.success) {
         setStatus('Google Pay payment successful!');
-        Alert.alert(
+        console.log(
           'Payment Successful! 🎉',
           `Transaction ID: ${result.transactionId}\nToken: ${result.token?.substring(0, 20)}...`,
           [{ text: 'OK' }]
         );
       } else {
         setStatus('Google Pay payment failed');
-        Alert.alert('Payment Failed', result.error || 'Unknown error');
+        console.log('Payment Failed', result.error || 'Unknown error');
       }
     } catch (error) {
       console.error('Google Pay error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setStatus(`Google Pay error: ${errorMessage}`);
-      Alert.alert('Error', errorMessage);
+      console.log('Error', errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -293,24 +409,24 @@ export default function TunaPaymentExample() {
     console.log('💳 Credit Card button clicked!');
     if (!sdk) {
       console.log('❌ SDK not initialized');
-      Alert.alert('Error', 'SDK not initialized');
+      console.log('Error', 'SDK not initialized');
       return;
     }
 
     // Check if payment already in progress
     if (paymentInProgress) {
-      Alert.alert('Warning', 'A payment is already in progress. Please wait...');
+      console.log('Warning', 'A payment is already in progress. Please wait...');
       return;
     }
 
     // Validation
     if (!cardNumber || !expiryMonth || !expiryYear || !cvv || !holderName) {
-      Alert.alert('Validation Error', 'Please fill in all credit card fields');
+      console.log('Validation Error', 'Please fill in all credit card fields');
       return;
     }
 
     if (!customerNameCC || !customerEmailCC) {
-      Alert.alert('Validation Error', 'Please fill in customer information');
+      console.log('Validation Error', 'Please fill in customer information');
       return;
     }
 
@@ -320,6 +436,7 @@ export default function TunaPaymentExample() {
       setPaymentResult(null);
       setStatus('🔄 Processing credit card payment...');
       console.log('💳 Processing credit card:', { cardNumber, holderName });
+      console.log('💰 Amount debug:', { amount, parsedAmount: parseFloat(amount), currency });
 
       // Use the real credit card payment API
       const result = await sdk.processCreditCardPayment(
@@ -342,6 +459,100 @@ export default function TunaPaymentExample() {
       console.log('💳 Credit Card result:', result);
       setPaymentResult(result);
 
+      // Check if 3DS data collection is required using native handler
+      // Extract from the full payment result since it includes token response data
+      const threeDSInfo = extractThreeDSInfo(result);
+      if (threeDSInfo.needsDataCollection && threeDSInfo.dataCollectionInfo) {
+        console.log('🔒 3DS data collection required, starting native collection...');
+        setIsPerformingDataCollection(true);
+        setThreeDSStatus('🔒 Performing 3DS data collection...');
+        setStatus('🔒 Performing 3DS data collection...');
+        
+        try {
+          const collectionResult = await threeDSHandler.performDataCollection(threeDSInfo.dataCollectionInfo);
+          
+          if (collectionResult.success) {
+            console.log('✅ Native 3DS data collection completed');
+            setThreeDSStatus('✅ Data collection complete');
+            setStatus('🔒 Data collection complete, proceeding with payment...');
+            // Continue with payment processing
+          } else {
+            throw new Error(collectionResult.error || 'Data collection failed');
+          }
+        } catch (error) {
+          console.error('❌ 3DS data collection failed:', error);
+          setThreeDSStatus('❌ Data collection failed');
+          setStatus('❌ 3DS data collection failed');
+          console.log('3DS Error', `Data collection failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          return;
+        } finally {
+          setIsPerformingDataCollection(false);
+        }
+      }
+
+      // Check if 3DS challenge is required
+      const challengeInfo = extractChallengeInfo(result.paymentResponse, TUNA_CONFIG.debug);
+      if (challengeInfo.needsChallenge && challengeInfo.challengeInfo) {
+        console.log('🔒 3DS challenge required:', challengeInfo.challengeInfo.challengeUrl);
+        setIsPerformingChallenge(true);
+        setThreeDSStatus('🔒 Performing 3DS challenge...');
+        setStatus('🔒 3DS authentication required...');
+        
+        try {
+          // Extract complete challenge configuration including ACS URL
+          console.log('🔍 Extracting complete challenge configuration...');
+          setThreeDSStatus('🔍 Analyzing 3DS challenge...');
+          setStatus('🔍 Analyzing 3DS challenge requirements...');
+          
+          const completeChallenge = await extractCompleteChallenge(challengeInfo.challengeInfo);
+          console.log('✅ Complete challenge config:', completeChallenge);
+          
+          if (!completeChallenge.acsUrl) {
+            throw new Error('Could not extract ACS URL from challenge data');
+          }
+          
+          // Prepare real 3DS challenge configuration
+          const realChallengeConfig: Real3DSChallengeConfig = {
+            challengeUrl: completeChallenge.challengeUrl,
+            acsUrl: completeChallenge.acsUrl,
+            paRequest: completeChallenge.paRequest,
+            termUrl: completeChallenge.termUrl || 'https://centinelapistag.cardinalcommerce.com/V1/TermURL/Overlay/CCA',
+            token: completeChallenge.token || '',
+            transactionId: completeChallenge.transactionId || challengeInfo.challengeInfo.transactionId || 'unknown',
+            md: completeChallenge.md
+          };
+          
+          console.log('🔒 Starting REAL 3DS challenge execution');
+          setThreeDSStatus('🔒 Executing real 3DS challenge...');
+          setStatus('🔒 3DS challenge - real authentication required');
+          
+          // Execute real 3DS challenge
+          const realResult = await executeReal3DSChallenge(realChallengeConfig);
+          
+          if (realResult.success) {
+            console.log('✅ Real 3DS challenge completed successfully:', realResult);
+            setThreeDSStatus('✅ Real 3DS authentication completed');
+            setStatus('🔒 3DS authentication successful, finalizing payment...');
+            
+            // The authentication result would be sent back to Tuna APIs in a real implementation
+            setStatus('✅ Payment processing complete (Real 3DS authenticated)');
+            setThreeDSStatus('✅ Real 3DS flow completed successfully');
+            
+          } else {
+            throw new Error(realResult.errorMessage || 'Real 3DS challenge failed');
+          }
+          
+        } catch (error) {
+          console.error('❌ Real 3DS challenge failed:', error);
+          setThreeDSStatus('❌ Real 3DS challenge failed');
+          setStatus('❌ Real 3DS authentication failed');
+          console.log('3DS Challenge Error', `Real authentication failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          return;
+        } finally {
+          setIsPerformingChallenge(false);
+        }
+      }
+
       if (result.success && result.paymentKey && result.methodId) {
         setCurrentPaymentId(result.paymentId);
         setStatus('🔄 Payment initiated, checking status...');
@@ -358,17 +569,17 @@ export default function TunaPaymentExample() {
         );
       } else if (result.success) {
         setStatus('✅ Credit card payment successful!');
-        Alert.alert('Payment Successful! 🎉', 'Your payment has been processed successfully.');
+        console.log('Payment Successful! 🎉', 'Your payment has been processed successfully.');
       } else {
         setStatus('❌ Credit card payment failed');
-        Alert.alert('Payment Failed', result.error?.message || 'Credit card payment was not successful');
+        console.log('Payment Failed', result.error?.message || 'Credit card payment was not successful');
       }
     } catch (error) {
       console.error('Credit card error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setStatus(`❌ Credit card error: ${errorMessage}`);
       setPaymentResult({ success: false, error: errorMessage });
-      Alert.alert('Real API Error', `This is a real error from Tuna API:\n\n${errorMessage}`);
+      console.log('Real API Error', `This is a real error from Tuna API:\n\n${errorMessage}`);
     } finally {
       setIsLoading(false);
       setPaymentInProgress(false);
@@ -408,17 +619,17 @@ export default function TunaPaymentExample() {
 
     // Show appropriate alert
     if (statusInfo.type === 'success') {
-      Alert.alert(
+      console.log(
         'Payment Successful! 🎉', 
         `${statusInfo.message}\n\nPayment ID: ${originalResult.paymentId}\nStatus Code: ${statusUpdate.paymentStatusFound}`
       );
     } else if (statusInfo.type === 'error') {
-      Alert.alert(
+      console.log(
         'Payment Failed', 
         `${statusInfo.message}\n\nPayment ID: ${originalResult.paymentId}\nStatus Code: ${statusUpdate.paymentStatusFound}\n\nPlease try again or use a different payment method.`
       );
     } else {
-      Alert.alert('Payment Status', `${statusInfo.message}\n\nStatus Code: ${statusUpdate.paymentStatusFound}`);
+      console.log('Payment Status', `${statusInfo.message}\n\nStatus Code: ${statusUpdate.paymentStatusFound}`);
     }
   };
 
@@ -426,13 +637,13 @@ export default function TunaPaymentExample() {
     console.log('🏦 PIX button clicked!');
     if (!sdk) {
       console.log('❌ SDK not initialized');
-      Alert.alert('Error', 'SDK not initialized');
+      console.log('Error', 'SDK not initialized');
       return;
     }
 
     // Validation
     if (!customerName || !customerEmail || !customerDocument) {
-      Alert.alert('Validation Error', 'Please fill in customer information for PIX');
+      console.log('Validation Error', 'Please fill in customer information for PIX');
       return;
     }
 
@@ -478,7 +689,7 @@ export default function TunaPaymentExample() {
               setPixStatus('approved');
               setStatus('PIX payment approved! ✅');
               setIsPollingPix(false);
-              Alert.alert(
+              console.log(
                 'PIX Payment Successful! 🎉',
                 'Your PIX payment has been approved and processed.',
                 [{ text: 'OK' }]
@@ -487,7 +698,7 @@ export default function TunaPaymentExample() {
               setPixStatus('declined');
               setStatus('PIX payment declined ❌');
               setIsPollingPix(false);
-              Alert.alert(
+              console.log(
                 'PIX Payment Declined',
                 'Your PIX payment was declined. Please try again.',
                 [{ text: 'OK' }]
@@ -496,7 +707,7 @@ export default function TunaPaymentExample() {
               setPixStatus('timeout');
               setStatus('PIX payment timeout - please check manually');
               setIsPollingPix(false);
-              Alert.alert(
+              console.log(
                 'PIX Payment Timeout',
                 'PIX payment monitoring timed out. Please check your banking app or try again.',
                 [{ text: 'OK' }]
@@ -513,7 +724,7 @@ export default function TunaPaymentExample() {
           { maxAttempts: 60, intervalMs: 5000 } // Poll for 5 minutes
         );
 
-        Alert.alert(
+        console.log(
           'Real PIX Generated! 🇧🇷',
           `✅ PIX QR Code generated successfully!\n\n📱 Scan the QR code below with your banking app to complete the payment.\n\n⏱️ Monitoring payment status in real-time...`,
           [{ text: 'OK' }]
@@ -526,7 +737,7 @@ export default function TunaPaymentExample() {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setStatus(`PIX error: ${errorMessage}`);
       setPaymentInProgress(false);
-      Alert.alert('Real API Error', `This is a real error from Tuna API:\n\n${errorMessage}`);
+      console.log('Real API Error', `This is a real error from Tuna API:\n\n${errorMessage}`);
     } finally {
       setIsLoading(false);
     }
@@ -925,17 +1136,65 @@ export default function TunaPaymentExample() {
           <Text style={styles.sessionDescription}>
             Enter your Tuna session ID to initialize the SDK
           </Text>
+          
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Partner Unique ID (for session matching)</Text>
+            <View style={styles.partnerIdContainer}>
+              <Text style={styles.partnerIdText} selectable={true}>{partnerUniqueId}</Text>
+              <TouchableOpacity 
+                style={styles.copyButton}
+                onPress={async () => {
+                  try {
+                    const copied = await copyToClipboard(partnerUniqueId);
+                    if (copied) {
+                        console.log('📋 Partner ID copied to clipboard');
+                    } else {
+                        console.log('⚠️ Clipboard not available - Partner ID:', partnerUniqueId);
+                    }
+                  } catch (error) {
+                    console.log('❌ Failed to copy to clipboard:', error);
+                  }
+                }}
+              >
+                <Text style={styles.copyButtonText}>📋 Copy</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.partnerIdNote}>
+              Use this ID when generating your session in the backend
+            </Text>
+          </View>
+          
           <View style={styles.formGroup}>
             <Text style={styles.label}>Session ID</Text>
-            <TextInput
-              style={[styles.input, styles.sessionInput]}
-              value={sessionId}
-              onChangeText={setSessionId}
-              placeholder="Enter Tuna session ID..."
-              multiline={true}
-              numberOfLines={3}
-              textAlignVertical="top"
-            />
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={[styles.input, styles.sessionInput]}
+                value={sessionId}
+                onChangeText={setSessionId}
+                placeholder="Enter Tuna session ID..."
+                multiline={true}
+                numberOfLines={3}
+                textAlignVertical="top"
+              />
+              <TouchableOpacity 
+                style={styles.pasteButton}
+                onPress={async () => {
+                  try {
+                    const clipboardContent = await getFromClipboard();
+                    if (clipboardContent.trim()) {
+                      setSessionId(clipboardContent.trim());
+                      console.log('📋 Session ID pasted from clipboard');
+                    } else {
+                      console.log('📋 No content found in clipboard (or clipboard not available)');
+                    }
+                  } catch (error) {
+                    console.log('❌ Failed to read from clipboard:', error);
+                  }
+                }}
+              >
+                <Text style={styles.pasteButtonText}>📋 Paste</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <TouchableOpacity
             style={[styles.button, styles.primaryButton, isLoading && styles.disabledButton]}
@@ -1013,6 +1272,21 @@ export default function TunaPaymentExample() {
             {renderTabContent()}
           </View>
         </>
+      )}
+
+      {/* Native 3DS Status Display */}
+      {(isPerformingDataCollection || isPerformingChallenge) && (
+        <View style={styles.threeDSOverlay}>
+          <View style={styles.threeDSContainer}>
+            <ActivityIndicator size="large" color="#007AFF" />
+            <Text style={styles.threeDSTitle}>
+              {isPerformingDataCollection ? '🔒 3D Secure Data Collection' : '🔒 3D Secure Authentication'}
+            </Text>
+            <Text style={styles.threeDSMessage}>
+              {threeDSStatus || (isPerformingDataCollection ? 'Collecting device data...' : 'Processing authentication...')}
+            </Text>
+          </View>
+        </View>
       )}
     </ScrollView>
   );
@@ -1378,6 +1652,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   sessionInput: {
+    flex: 1,
     height: 80,
     textAlignVertical: 'top',
     paddingTop: 10,
@@ -1474,5 +1749,96 @@ const styles = StyleSheet.create({
     color: '#333',
     marginTop: 20,
     marginBottom: 10,
+  },
+  // Native 3DS Status styles
+  threeDSOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  threeDSContainer: {
+    backgroundColor: '#ffffff',
+    padding: 30,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginHorizontal: 40,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  threeDSTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginTop: 15,
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  threeDSMessage: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 5,
+  },
+  // Partner ID styles
+  partnerIdContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8f8f8',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  partnerIdText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#333',
+    fontFamily: 'monospace',
+    backgroundColor: 'transparent',
+  },
+  copyButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  copyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  partnerIdNote: {
+    fontSize: 11,
+    color: '#666',
+    fontStyle: 'italic',
+    marginTop: 4,
+  },
+  // Input container for session ID with paste button
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  pasteButton: {
+    backgroundColor: '#34C759',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    marginLeft: 8,
+    marginTop: 2,
+  },
+  pasteButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '500',
   },
 });

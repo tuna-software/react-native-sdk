@@ -45,8 +45,8 @@ describe('NativePaymentsExample Compatibility', () => {
     const applePayConfig = {
       merchantIdentifier: 'merchant.test',
       supportedNetworks: ['visa', 'mastercard'] as ApplePaySupportedNetwork[],
-      countryCode: 'US',
-      currencyCode: 'USD',
+      countryCode: 'BR',
+      currencyCode: 'BRL',
       requestBillingAddress: true,
       requestPayerEmail: true,
       requestShipping: false,
@@ -77,7 +77,7 @@ describe('NativePaymentsExample Compatibility', () => {
       },
       billingAddressRequired: true,
       emailRequired: true,
-      currencyCode: 'USD',
+      currencyCode: 'BRL',
     };
 
     await expect(sdk.setupGooglePay(googlePayConfig)).resolves.not.toThrow();

@@ -159,6 +159,12 @@ export interface PaymentResult {
     token: string;
     paRequest?: string;
   };
+  dataCollectionInfo?: {
+    deviceDataCollectionUrl: string;
+    accessToken: string;
+    referenceId: string;
+    transactionId: string;
+  };
   qrCodeData?: any;
   boletoData?: any;
   amount?: number;
@@ -169,6 +175,7 @@ export interface PaymentResult {
   paymentKey?: string;
   methodId?: string;
   tokenData?: TokenData;
+  fullTokenResponse?: any; // Full tokenization response for 3DS extraction
   paymentResponse?: any;
   error?: TunaError;
 }

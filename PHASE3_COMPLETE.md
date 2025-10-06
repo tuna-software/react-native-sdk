@@ -138,8 +138,8 @@ const googlePayAdapter = createGooglePayAdapter(paymentsAdapter);
 await applePayAdapter.setup({
   merchantIdentifier: 'merchant.com.yourcompany.app',
   supportedNetworks: ['visa', 'mastercard', 'amex'],
-  countryCode: 'US',
-  currencyCode: 'USD',
+  countryCode: 'BR',
+  currencyCode: 'BRL',
   requestBillingAddress: true,
 });
 

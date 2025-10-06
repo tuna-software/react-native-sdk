@@ -149,8 +149,8 @@ export function NativePaymentsExample() {
       
       const paymentDetails: PaymentDetails = {
         amount: 99.99,
-        currencyCode: 'USD',
-        countryCode: 'US',
+        currencyCode: 'BRL',
+        countryCode: 'BR',
         total: {
           label: 'Total Purchase',
           amount: {

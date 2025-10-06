@@ -107,8 +107,8 @@ const config = {
 const applePayConfig = {
   merchantIdentifier: 'merchant.com.yourcompany.app',
   supportedNetworks: ['visa', 'mastercard', 'amex'],
-  countryCode: 'US',
-  currencyCode: 'USD',
+  countryCode: 'BR',
+  currencyCode: 'BRL',
   requestBillingAddress: true,
   requestPayerEmail: true,
 };

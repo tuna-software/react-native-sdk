@@ -54,8 +54,8 @@ Currently uses a mock session ID. In production:
 const applePayConfig = {
   merchantIdentifier: 'merchant.com.yourcompany.app', // Your Apple Merchant ID
   supportedNetworks: ['visa', 'mastercard', 'amex'],
-  countryCode: 'US',
-  currencyCode: 'USD',
+  countryCode: 'BR',
+  currencyCode: 'BRL',
 };
 ```
 

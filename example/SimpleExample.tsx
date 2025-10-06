@@ -16,8 +16,8 @@ import type {
 const applePayConfig: ApplePayConfig = {
   merchantIdentifier: 'merchant.com.yourcompany.app',
   supportedNetworks: ['visa', 'mastercard', 'amex'],
-  countryCode: 'US',
-  currencyCode: 'USD',
+  countryCode: 'BR',
+  currencyCode: 'BRL',
   requestBillingAddress: true,
   requestPayerEmail: true,
 };
@@ -42,14 +42,14 @@ const googlePayConfig: GooglePayConfig = {
   },
   billingAddressRequired: true,
   emailRequired: true,
-  currencyCode: 'USD',
+  currencyCode: 'BRL',
 };
 
 // Example payment details
 const paymentDetails: PaymentDetails = {
   amount: 10.99,
-  currencyCode: 'USD',
-  countryCode: 'US',
+  currencyCode: 'BRL',
+  countryCode: 'BR',
   total: {
     label: 'Total',
     amount: {

@@ -85,7 +85,10 @@
     "typescript": "^5.1.0"
   },
   "dependencies": {
-    "card-validator": "^8.1.1"
+    "card-validator": "^8.1.1",
+    "react-dom": "^19.1.0",
+    "react-native-web": "^0.21.1",
+    "react-native-webview": "^13.16.0"
   },
   "eslintConfig": {
     "root": true,
