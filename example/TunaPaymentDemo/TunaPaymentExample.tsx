@@ -15,7 +15,9 @@ import {
   ScrollView,
   TextInput,
   Switch,
+  Image,
 } from 'react-native';
+import QRCode from 'qrcode';
 // Multi-approach clipboard functionality that works in different environments
 const copyToClipboard = async (text: string) => {
   // Approach 1: Try web Clipboard API (works in web builds and some React Native WebView contexts)
@@ -138,10 +140,10 @@ interface CreditCardDetails {
 }
 
 interface CustomerInfo {
-  name: string;
-  email: string;
-  document: string;
-  phone: string;
+  name?: string;  // Optional - defaults to 'John Doe'
+  email?: string; // Optional - defaults to 'john.doe@example.com'
+  document?: string; // Optional - only included if provided
+  phone?: string;    // Optional - only included if provided
 }
 
 // Configuration using REAL session from Tuna backend
@@ -185,13 +187,13 @@ export default function TunaPaymentExample() {
   const [customerEmailCC, setCustomerEmailCC] = useState('john.doe@example.com');
 
   // Customer info for PIX
-  const [customerName, setCustomerName] = useState('');
-  const [customerEmail, setCustomerEmail] = useState('');
-  const [customerDocument, setCustomerDocument] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerName, setCustomerName] = useState('John Doe');
+  const [customerEmail, setCustomerEmail] = useState('john.doe@example.com');
+  const [customerDocument, setCustomerDocument] = useState(''); // Optional
+  const [customerPhone, setCustomerPhone] = useState(''); // Optional
 
   // PIX result state
-  const [pixResult, setPixResult] = useState<{ qrCode: string; paymentKey: string; expiresAt: Date } | null>(null);
+  const [pixResult, setPixResult] = useState<{ qrCode: string; qrImage: string; qrCodeDataURL: string; paymentKey: string; expiresAt: Date } | null>(null);
   const [pixStatus, setPixStatus] = useState<string>('');
   const [isPollingPix, setIsPollingPix] = useState(false);
 
@@ -641,9 +643,9 @@ export default function TunaPaymentExample() {
       return;
     }
 
-    // Validation
-    if (!customerName || !customerEmail || !customerDocument) {
-      console.log('Validation Error', 'Please fill in customer information for PIX');
+    // Validation - only name and email are required (document is optional)
+    if (!customerName || !customerEmail) {
+      console.log('Validation Error', 'Please fill in customer name and email for PIX');
       return;
     }
 
@@ -669,6 +671,8 @@ export default function TunaPaymentExample() {
       if (result.success && result.paymentKey) {
         setPixResult({
           qrCode: result.qrCode || '',
+          qrImage: result.qrCodeBase64 || '', // Base64 image from API
+          qrCodeDataURL: '', // We'll use qrImage instead
           paymentKey: result.paymentKey,
           expiresAt: new Date(result.expiresAt || Date.now() + 30 * 60 * 1000)
         });
@@ -677,11 +681,11 @@ export default function TunaPaymentExample() {
         setPixStatus('pending');
         setStatus('PIX QR Code generated - waiting for payment...');
         
-        // Start polling for payment status
+        // Start polling for payment status using methodId if available
         setIsPollingPix(true);
         await sdk.startStatusPolling(
           result.paymentKey,
-          '', // methodId not needed for PIX
+          result.methodId || '', // Use methodId from PIX response if available
           (statusUpdate: any) => {
             console.log('📊 PIX Status update:', statusUpdate);
             
@@ -1007,23 +1011,23 @@ export default function TunaPaymentExample() {
       </View>
 
       <View style={styles.formGroup}>
-        <Text style={styles.label}>Document (CPF/CNPJ) *</Text>
+        <Text style={styles.label}>Document (CPF/CNPJ) - Optional</Text>
         <TextInput
           style={styles.input}
           value={customerDocument}
           onChangeText={setCustomerDocument}
-          placeholder="123.456.789-00"
+          placeholder="123.456.789-00 (optional)"
           keyboardType="numeric"
         />
       </View>
 
       <View style={styles.formGroup}>
-        <Text style={styles.label}>Phone (Optional)</Text>
+        <Text style={styles.label}>Phone - Optional</Text>
         <TextInput
           style={styles.input}
           value={customerPhone}
           onChangeText={setCustomerPhone}
-          placeholder="+55 11 99999-9999"
+          placeholder="+55 11 99999-9999 (optional)"
           keyboardType="phone-pad"
         />
       </View>
@@ -1073,36 +1077,84 @@ export default function TunaPaymentExample() {
             Expires: {pixResult.expiresAt.toLocaleString()}
           </Text>
           
+          {/* QR Code Display */}
           <View style={styles.qrCodeContainer}>
-            <Text style={styles.qrCodePlaceholder}>📱 QR CODE</Text>
-            <Text style={styles.qrCodeNote}>
-              Scan with your banking app to complete payment
-            </Text>
+            <Text style={styles.qrCodeTitle}>Scan with your banking app</Text>
             
-            {/* QR Code visual representation */}
-            <View style={styles.qrCodeVisual}>
-              <Text style={styles.qrCodeArt}>
-                █████████████████████████{'\n'}
-                █ ▄▄▄▄▄ █▀█ █▄▄▄█ ▄▄▄▄▄ █{'\n'}
-                █ █   █ █▀▀ █▄ ▄█ █   █ █{'\n'}
-                █ █▄▄▄█ █▀▀▀█▀█▀█ █▄▄▄█ █{'\n'}
-                █▄▄▄▄▄▄▄█▄▀ ▀ ▀▄█▄▄▄▄▄▄▄█{'\n'}
-                █▄▄█▄▄▄▄▀▄▄▄██▄▄▄▄▀█▄▄▄▄█{'\n'}
-                ██ ▄▄▄█▄▄█▄█▄ █▄▄▄██▄█▄▄█{'\n'}
-                ██▄▄▄▄▄▄▄█▄▄▄██▄▄ ▀▄▄▄▄██{'\n'}
-                █████████████████████████
+            {/* Actual QR Code */}
+            <View style={styles.qrCodeWrapper}>
+              {pixResult.qrImage ? (
+                <Image
+                  source={{ 
+                    uri: pixResult.qrImage.startsWith('data:') 
+                      ? pixResult.qrImage 
+                      : `data:image/png;base64,${pixResult.qrImage}`
+                  }}
+                  style={{ width: 200, height: 200 }}
+                  resizeMode="contain"
+                />
+              ) : (
+                <View style={styles.qrCodePlaceholder}>
+                  <Text style={styles.qrCodePlaceholderText}>📱 QR Code</Text>
+                </View>
+              )}
+            </View>
+            
+            {/* Copy QR Code Button */}
+            <TouchableOpacity 
+              style={styles.copyQrButton}
+              onPress={async () => {
+                const copied = await copyToClipboard(pixResult.qrCode);
+                if (copied) {
+                  console.log('📋 PIX code copied to clipboard');
+                } else {
+                  console.log('⚠️ Clipboard not available - PIX code:', pixResult.qrCode);
+                }
+              }}
+            >
+              <Text style={styles.copyQrButtonText}>📋 Copy PIX Code</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {/* PIX Code Text with Copy Button */}
+          <View style={styles.pixCodeSection}>
+            <Text style={styles.pixCodeLabel}>PIX Code (Copy & Paste):</Text>
+            <View style={styles.pixCodeContainer}>
+              <Text style={styles.pixCode} numberOfLines={3} selectable>
+                {pixResult.qrCode}
               </Text>
+              <TouchableOpacity 
+                style={styles.copyIconButton}
+                onPress={async () => {
+                  const copied = await copyToClipboard(pixResult.qrCode);
+                  if (copied) {
+                    console.log('📋 PIX code copied to clipboard');
+                  } else {
+                    console.log('⚠️ Clipboard not available - PIX code:', pixResult.qrCode);
+                  }
+                }}
+              >
+                <Text style={styles.copyIcon}>📋</Text>
+              </TouchableOpacity>
             </View>
           </View>
           
-          <Text style={styles.pixCodeLabel}>PIX Code (Copy/Paste):</Text>
-          <Text style={styles.pixCode} selectable>
-            {pixResult.qrCode}
-          </Text>
-          
-          <Text style={styles.pixInstructions}>
-            💡 You can either scan the QR code above or copy the PIX code to your banking app
-          </Text>
+          {/* Instructions */}
+          <View style={styles.pixInstructionsContainer}>
+            <Text style={styles.pixInstructionsTitle}>How to pay:</Text>
+            <View style={styles.instructionItem}>
+              <Text style={styles.instructionNumber}>1</Text>
+              <Text style={styles.instructionText}>Open your banking app</Text>
+            </View>
+            <View style={styles.instructionItem}>
+              <Text style={styles.instructionNumber}>2</Text>
+              <Text style={styles.instructionText}>Scan the QR code or copy the PIX code</Text>
+            </View>
+            <View style={styles.instructionItem}>
+              <Text style={styles.instructionNumber}>3</Text>
+              <Text style={styles.instructionText}>Confirm the payment</Text>
+            </View>
+          </View>
         </View>
       )}
     </View>
@@ -1525,8 +1577,20 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   qrCodePlaceholder: {
-    fontSize: 48,
-    marginBottom: 10,
+    width: 200,
+    height: 200,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#ddd',
+    borderStyle: 'dashed',
+  },
+  qrCodePlaceholderText: {
+    fontSize: 16,
+    color: '#666',
+    fontWeight: 'bold',
   },
   qrCodeNote: {
     fontSize: 12,
@@ -1840,5 +1904,93 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '500',
+  },
+  // PIX QR Code styles
+  qrCodeTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 15,
+    color: '#333',
+  },
+  qrCodeWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 15,
+    backgroundColor: 'white',
+    borderRadius: 10,
+    marginBottom: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  copyQrButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  copyQrButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  pixCodeSection: {
+    marginTop: 20,
+  },
+  pixCodeContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center',
+    marginTop: 5,
+  },
+  copyIconButton: {
+    marginLeft: 10,
+    padding: 8,
+    backgroundColor: '#007AFF',
+    borderRadius: 6,
+  },
+  copyIcon: {
+    color: 'white',
+    fontSize: 16,
+  },
+  pixInstructionsContainer: {
+    marginTop: 20,
+    padding: 15,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 10,
+  },
+  pixInstructionsTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: '#333',
+  },
+  instructionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  instructionNumber: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#007AFF',
+    color: 'white',
+    textAlign: 'center',
+    lineHeight: 24,
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginRight: 12,
+  },
+  instructionText: {
+    fontSize: 14,
+    color: '#333',
+    flex: 1,
   },
 });

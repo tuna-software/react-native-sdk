@@ -219,11 +219,11 @@ export interface StatusResult {
 
 export interface PIXResult {
   success: boolean;
-  qrCode?: string;
-  qrCodeBase64?: string;
-  paymentKey?: string;
-  expiresAt?: string;
-  error?: TunaError;
+  qrCode: string;
+  qrCodeBase64: string; // Add base64 field for image display
+  paymentKey: string;
+  methodId?: string | number; // Allow both string and number for method ID
+  expiresAt: string;
 }
 
 export interface BoletoResult {

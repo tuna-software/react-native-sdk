@@ -1229,29 +1229,69 @@ export class TunaReactNative {
         console.log('🏦 Generating PIX payment for amount:', amount);
       }
 
-      const paymentMethod = {
-        PaymentMethodType: 'D', // PIX payment type
-        Amount: amount
-      };
-
       // Generate unique order ID for this payment
       const partnerUniqueId = `pix_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-      const paymentRequest = {
-        TokenSession: this.currentSessionId!,
+      // Prepare customer data with defaults and optional document
+      const customerData = {
+        name: customer.name || 'John Doe',
+        email: customer.email || 'john.doe@example.com',
+        ...(customer.document && customer.document.trim() && { document: customer.document }),
+        ...(customer.phone && customer.phone.trim() && { phone: customer.phone }),
+      };
+
+      const pixData = {
+        Customer: customerData,
         PartnerUniqueId: partnerUniqueId,
         PaymentData: {
           Amount: amount,
           CountryCode: 'BR',
-          PaymentMethods: [paymentMethod]
+          PaymentMethods: [{
+            PaymentMethodType: 'D', // PIX type
+            Amount: amount
+          }]
         },
-        Customer: customer,
+        TokenSession: this.currentSessionId!
       };
 
       const paymentResponse = await this.makeApiRequestWithToken(
         `${this.apiConfig.INTEGRATIONS_API_URL}/Init`,
-        paymentRequest
+        pixData
       );
+
+      if (this.config.debug) {
+        console.log('🏦 PIX API Response:', {
+          code: paymentResponse.code,
+          qrCopyPaste: paymentResponse.qrCopyPaste ? 'Present' : 'Missing',
+          qrImage: paymentResponse.qrImage ? 'Present' : 'Missing', 
+          paymentKey: paymentResponse.paymentKey,
+          methods: paymentResponse.methods,
+          // Log the entire response to see all available fields
+          fullResponse: paymentResponse
+        });
+        
+        // Log the exact methodId that will be used for polling
+        const extractedMethodId = paymentResponse.methods && paymentResponse.methods[0]?.methodId;
+        console.log('� Extracted MethodId for polling:', extractedMethodId);
+      }
+
+      // Extract methodId and PIX info from the methods array
+      const methodId = paymentResponse.methods && paymentResponse.methods[0]?.methodId;
+      const pixInfo = paymentResponse.methods && paymentResponse.methods[0]?.pixInfo;
+
+      if (this.config.debug) {
+        console.log('🏦 PIX API Response:', {
+          code: paymentResponse.code,
+          paymentKey: paymentResponse.paymentKey,
+          methods: paymentResponse.methods,
+          pixInfo: pixInfo
+        });
+        
+        console.log('🔑 Extracted MethodId for polling:', methodId);
+        console.log('📋 PIX Info:', pixInfo);
+        console.log('📋 QR Copy-paste text:', pixInfo?.qrCopyPaste || pixInfo?.qrCode);
+        console.log('🖼️ QR Image:', pixInfo?.qrImage);
+      }
 
       if (paymentResponse.code !== 1) {
         throw new TunaPaymentError(`PIX generation failed: ${paymentResponse.message}`);
@@ -1259,8 +1299,10 @@ export class TunaReactNative {
 
       return {
         success: true,
-        qrCode: paymentResponse.qrCode || '',
+        qrCode: pixInfo?.qrCopyPaste || pixInfo?.qrCode || '', // PIX copy-paste string from pixInfo
+        qrCodeBase64: pixInfo?.qrImage || '', // QR image from pixInfo
         paymentKey: paymentResponse.paymentKey,
+        methodId: methodId !== undefined ? methodId : 0, // Extract from methods[0].methodId or default to 0
         expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(), // 30 minutes
       };
     } catch (error) {
@@ -1276,22 +1318,60 @@ export class TunaReactNative {
   // ===========================================
 
   /**
-   * Get payment status (Real Tuna API)
+   * Get payment status using long polling (Real Tuna API)
+   * Based on JavaScript plugin implementation
    */
-  async getPaymentStatus(paymentKey: string, methodId?: string): Promise<any> {
+  async getPaymentStatus(paymentKey: string, methodId?: string | number): Promise<any> {
     this.ensureInitialized();
 
     try {
+      const successStatuses = ['2', '8'];
+      const failStatuses = ['4', '5', 'A', 'N'];
+      
+      // Convert methodId to number if it's a string, default to 0
+      const methodIdNumber = typeof methodId === 'string' ? 
+        (methodId === '' ? 0 : parseInt(methodId, 10)) : 
+        (methodId ?? 0);
+      
       const requestData = {
-        SessionId: this.currentSessionId,
-        PaymentKey: paymentKey,
-        MethodId: methodId,
+        MethodID: methodIdNumber, // Use number like JavaScript plugin
+        PaymentStatusList: [...successStatuses, ...failStatuses],
+        PaymentKey: paymentKey
       };
 
-      return await this.makeApiRequest(
-        `${this.apiConfig.INTEGRATIONS_API_URL}/Status`,
+      if (this.config.debug) {
+        console.log('📊 [TunaReactNative] Long polling payment status with:', requestData);
+      }
+
+      const response = await this.makeApiRequestWithToken(
+        `${this.apiConfig.INTEGRATIONS_API_URL}/StatusPoll`,
         requestData
       );
+
+      if (this.config.debug) {
+        console.log('📊 [TunaReactNative] StatusPoll response:', response);
+      }
+
+      // Convert to standard format
+      const result = {
+        success: true,
+        paymentMethodConfimed: response.paymentMethodConfimed || false,
+        paymentStatusFound: response.paymentStatusFound,
+        allowRetry: response.allowRetry || false,
+        paymentApproved: false,
+        status: 'pending'
+      };
+
+      // Determine if payment was approved
+      if (response.paymentMethodConfimed && successStatuses.includes(response.paymentStatusFound)) {
+        result.paymentApproved = true;
+        result.status = 'approved';
+      } else if (response.paymentMethodConfimed && failStatuses.includes(response.paymentStatusFound)) {
+        result.paymentApproved = false;
+        result.status = 'declined';
+      }
+
+      return result;
     } catch (error) {
       throw new TunaPaymentError(
         'Failed to get payment status: ' + (error instanceof Error ? error.message : String(error)),
@@ -1301,69 +1381,69 @@ export class TunaReactNative {
   }
 
   /**
-   * Start polling payment status (Real Implementation)
+   * Start long polling for payment status (Real Implementation)
+   * Based on JavaScript plugin doStatusLongPolling methodology
    */
   async startStatusPolling(
     paymentKey: string,
-    methodId: string,
+    methodId: string | number,
     onStatusUpdate: (status: any) => void,
     options: { maxAttempts?: number; intervalMs?: number } = {}
   ): Promise<void> {
-    const { maxAttempts = 30, intervalMs = 5000 } = options;
+    const { maxAttempts = 30 } = options;
     let attempts = 0;
 
-    const poll = async (): Promise<void> => {
+    const doLongPolling = async (): Promise<void> => {
       try {
         attempts++;
         
         if (this.config.debug) {
-          console.log(`🔄 Polling payment status (attempt ${attempts}/${maxAttempts})...`);
+          console.log(`🔄 Long polling attempt ${attempts}/${maxAttempts} for payment ${methodId}/${paymentKey}`);
         }
 
         const statusResponse = await this.getPaymentStatus(paymentKey, methodId);
         
         if (this.config.debug) {
-          console.log('📊 Status response:', statusResponse);
+          console.log('📊 Long polling response:', statusResponse);
         }
 
-        onStatusUpdate(statusResponse);
-
-        // Check if payment is completed or failed
-        const isCompleted = statusResponse.paymentApproved === true || 
-                           statusResponse.paymentApproved === false ||
-                           statusResponse.status === 'approved' ||
-                           statusResponse.status === 'declined' ||
-                           statusResponse.status === 'cancelled';
-
-        if (isCompleted) {
+        // Payment method confirmed (final status)
+        if (statusResponse.paymentMethodConfimed) {
           if (this.config.debug) {
-            console.log('✅ Payment status polling completed:', statusResponse.status);
+            console.log('✅ Payment status confirmed:', statusResponse.status);
           }
+          onStatusUpdate(statusResponse);
           return;
         }
-
-        // Continue polling if not completed and within max attempts
-        if (attempts < maxAttempts) {
-          setTimeout(() => poll(), intervalMs);
-        } else {
+        // Can retry - continue long polling
+        else if (statusResponse.allowRetry && attempts < maxAttempts) {
           if (this.config.debug) {
-            console.log('⏰ Payment status polling timeout reached');
+            console.log('🔄 Retrying long polling...');
           }
-          onStatusUpdate({ 
-            status: 'timeout', 
-            message: 'Payment status polling timeout reached' 
-          });
+          // Recursive call for continuous long polling
+          await doLongPolling();
+        }
+        // No more retries or max attempts reached
+        else {
+          if (this.config.debug) {
+            console.log('⏰ Long polling timeout or no retry allowed');
+          }
+          statusResponse.paymentApproved = false;
+          statusResponse.status = 'timeout';
+          onStatusUpdate(statusResponse);
         }
       } catch (error) {
-        console.error('❌ Payment status polling error:', error);
+        console.error('❌ Long polling error:', error);
         onStatusUpdate({ 
+          success: false,
           status: 'error', 
+          paymentApproved: false,
           message: error instanceof Error ? error.message : String(error) 
         });
       }
     };
 
-    // Start polling
-    poll();
+    // Start the long polling
+    await doLongPolling();
   }
 }
