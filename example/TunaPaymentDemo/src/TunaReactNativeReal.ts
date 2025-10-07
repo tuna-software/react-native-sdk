@@ -1951,4 +1951,209 @@ export class TunaReactNative {
     // Start the long polling
     await doLongPolling();
   }
+
+  /**
+   * Process payment using a saved card token
+   * Uses bind API to associate CVV with token, then processes payment
+   */
+  async processSavedCardPayment(
+    amount: number,
+    token: string,
+    cvv: string,
+    installments: number = 1,
+    customer?: CustomerInfo
+  ): Promise<PaymentResult> {
+    this.ensureInitialized();
+
+    if (this.config.debug) {
+      console.log('🔍 SDK processSavedCardPayment called with:', { amount, token, installments, customer });
+    }
+
+    // Validate amount
+    if (!amount || amount <= 0) {
+      throw new TunaPaymentError('Amount must be greater than 0');
+    }
+
+    try {
+      // Step 1: Bind CVV to saved card token
+      if (this.config.debug) {
+        console.log('🔒 Step 1: Binding CVV to saved card token...');
+      }
+      
+      const bindResponse = await this.makeApiRequest(
+        `${this.apiConfig.TOKEN_API_URL}/Bind`,
+        {
+          SessionId: this.currentSessionId!,
+          token: token,
+          cvv: cvv,
+          authenticationInformation: { code: this.currentSessionId! }
+        },
+        false // Use account/app token headers
+      );
+
+      if (bindResponse.code !== 1) {
+        throw new TunaPaymentError(`CVV binding failed: ${bindResponse.message}`);
+      }
+
+      // Step 2: Initialize payment using the bound token
+      if (this.config.debug) {
+        console.log('💳 Step 2: Initializing payment with bound token...');
+      }
+
+      // Build payment method object for saved card
+      const paymentMethod: any = {
+        Amount: amount,
+        PaymentMethodType: '1', // Credit card
+        Installments: installments,
+        CardInfo: {
+          TokenProvider: "Tuna",
+          Token: token,
+          SaveCard: false // Already saved
+        }
+      };
+
+      // Build init request
+      const initRequest: any = {
+        TokenSession: this.currentSessionId!,
+        PaymentData: {
+          Amount: amount,
+          CountryCode: "BR",
+          PaymentMethods: [paymentMethod]
+        }
+      };
+
+      // Add customer information if provided
+      if (customer) {
+        initRequest.customer = customer;
+      }
+
+      if (this.config.debug) {
+        console.log('🔍 Full saved card payment request:', JSON.stringify(initRequest, null, 2));
+      }
+
+      const paymentResponse = await this.makeApiRequest(
+        `${this.apiConfig.INTEGRATIONS_API_URL}/Init`,
+        initRequest,
+        true // Use session header
+      );
+
+      if (this.config.debug) {
+        console.log('✅ Saved card payment initialized:', paymentResponse);
+      }
+
+      return {
+        paymentId: paymentResponse.paymentKey,
+        status: paymentResponse.status || 'pending',
+        createdAt: new Date(),
+        success: paymentResponse.code === 1,
+        paymentKey: paymentResponse.paymentKey,
+        methodId: paymentResponse.methodId,
+        tokenData: {
+          token: token,
+          brand: '' // We don't have brand info from bind response
+        },
+        threeDSData: paymentResponse.threeDSUrl ? {
+          url: paymentResponse.threeDSUrl,
+          token: paymentResponse.threeDSToken || ''
+        } : undefined,
+        paymentResponse: paymentResponse,
+      };
+    } catch (error) {
+      throw new TunaPaymentError(
+        'Saved card payment failed: ' + (error instanceof Error ? error.message : String(error)),
+        error
+      );
+    }
+  }
+
+  // ===========================================
+  // SAVED CARDS MANAGEMENT (Real Implementation)
+  // ===========================================
+
+  /**
+   * List saved cards for the current session
+   */
+  async listSavedCards(): Promise<any[]> {
+    this.ensureInitialized();
+
+    try {
+      if (this.config.debug) {
+        console.log('🔍 Listing saved cards...');
+      }
+
+      const response = await this.makeApiRequest(
+        `${this.apiConfig.TOKEN_API_URL}/List`,
+        {
+          SessionId: this.currentSessionId!
+        },
+        false // Use account/app token headers, not session header
+      );
+
+      if (this.config.debug) {
+        console.log('💳 Saved cards response:', response);
+      }
+
+      if (response.code === 1 && response.tokens) {
+        return response.tokens.map((card: any) => ({
+          token: card.token,
+          brand: card.brand,
+          cardHolderName: card.cardHolderName,
+          expirationMonth: parseInt(card.expirationMonth),
+          expirationYear: parseInt(card.expirationYear),
+          maskedNumber: card.maskedNumber,
+          singleUse: card.singleUse || false,
+          data: card.data
+        }));
+      }
+
+      return [];
+    } catch (error) {
+      if (this.config.debug) {
+        console.error('❌ Failed to list saved cards:', error);
+      }
+      throw new TunaPaymentError(
+        'Failed to list saved cards: ' + (error instanceof Error ? error.message : String(error)),
+        error
+      );
+    }
+  }
+
+  /**
+   * Delete a saved card
+   */
+  async deleteSavedCard(token: string): Promise<{ success: boolean; message?: string }> {
+    this.ensureInitialized();
+
+    try {
+      if (this.config.debug) {
+        console.log('🗑️ Deleting saved card with token:', token);
+      }
+
+      const response = await this.makeApiRequest(
+        `${this.apiConfig.TOKEN_API_URL}/Delete`,
+        {
+          SessionId: this.currentSessionId!,
+          token: token
+        },
+        false // Use account/app token headers, not session header
+      );
+
+      if (this.config.debug) {
+        console.log('🗑️ Delete card response:', response);
+      }
+
+      return {
+        success: response.code === 1,
+        message: response.message
+      };
+    } catch (error) {
+      if (this.config.debug) {
+        console.error('❌ Failed to delete saved card:', error);
+      }
+      throw new TunaPaymentError(
+        'Failed to delete saved card: ' + (error instanceof Error ? error.message : String(error)),
+        error
+      );
+    }
+  }
 }

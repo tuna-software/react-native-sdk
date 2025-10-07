@@ -218,6 +218,11 @@ export default function TunaPaymentExample() {
   const [isPerformingChallenge, setIsPerformingChallenge] = useState(false);
   const [threeDSStatus, setThreeDSStatus] = useState<string>('');
 
+  // Saved cards state
+  const [savedCards, setSavedCards] = useState<any[]>([]);
+  const [isLoadingSavedCards, setIsLoadingSavedCards] = useState(false);
+  const [selectedSavedCard, setSelectedSavedCard] = useState<string | null>(null);
+  const [showCardForm, setShowCardForm] = useState(false); // Toggle between list and form
   // Initialize SDK manually after session ID is provided
   // useEffect(() => {
   //   initializeSDK();
@@ -255,6 +260,20 @@ export default function TunaPaymentExample() {
       
       setStatus('REAL Tuna SDK initialized successfully!');
       console.log('✅ SDK initialized successfully');
+
+      // Load saved credit cards after SDK is set
+      try {
+        console.log('🔍 Loading saved cards...');
+        const cards = await tunaSDK.listSavedCards();
+        setSavedCards(cards);
+        console.log('💳 Loaded saved cards:', cards);
+        // Show form by default if no cards, show list if cards exist
+        setShowCardForm(cards.length === 0);
+      } catch (error) {
+        console.error('❌ Failed to load saved cards:', error);
+        // Show form if we can't load cards
+        setShowCardForm(true);
+      }
 
       // Check REAL platform availability
       if (Platform.OS === 'ios') {
@@ -421,9 +440,21 @@ export default function TunaPaymentExample() {
       return;
     }
 
-    // Validation
-    if (!cardNumber || !expiryMonth || !expiryYear || !cvv || !holderName) {
-      console.log('Validation Error', 'Please fill in all credit card fields');
+    // Validation based on current mode
+    if (!showCardForm && selectedSavedCard) {
+      // Using saved card - only CVV required
+      if (!cvv) {
+        console.log('Validation Error', 'Please enter CVV for the selected saved card');
+        return;
+      }
+    } else if (showCardForm) {
+      // Using new card - all fields required
+      if (!cardNumber || !expiryMonth || !expiryYear || !cvv || !holderName) {
+        console.log('Validation Error', 'Please fill in all credit card fields');
+        return;
+      }
+    } else {
+      console.log('Validation Error', 'Please select a saved card or add a new card');
       return;
     }
 
@@ -437,34 +468,62 @@ export default function TunaPaymentExample() {
       setPaymentInProgress(true);
       setPaymentResult(null);
       setStatus('🔄 Processing credit card payment...');
-      console.log('💳 Processing credit card:', { cardNumber, holderName });
+      console.log('💳 Processing credit card:', { 
+        mode: showCardForm ? 'new card' : 'saved card', 
+        selectedToken: selectedSavedCard,
+        cardNumber: showCardForm ? cardNumber : 'N/A'
+      });
       console.log('💰 Amount debug:', { amount, parsedAmount: parseFloat(amount), currency });
 
-      // Use the real credit card payment API
-      const result = await sdk.processCreditCardPayment(
-        parseFloat(amount),
-        {
-          cardNumber: cardNumber,
-          cardHolderName: holderName,
-          expirationMonth: expiryMonth,
-          expirationYear: expiryYear.length === 2 ? `20${expiryYear}` : expiryYear,
-          cvv: cvv,
-        },
-        1, // installments
-        saveCard,
-        {
-          name: customerNameCC,
-          email: customerEmailCC,
+      let result;
+      
+      if (!showCardForm && selectedSavedCard) {
+        // Use saved card with bind + payment
+        console.log('💳 Using saved card payment flow');
+        result = await sdk.processSavedCardPayment(
+          parseFloat(amount),
+          selectedSavedCard,
+          cvv,
+          1, // installments
+          {
+            name: customerNameCC,
+            email: customerEmailCC,
+          }
+        );
+      } else {
+        // Use new card with tokenization + payment
+        console.log('💳 Using new card payment flow');
+        result = await sdk.processCreditCardPayment(
+          parseFloat(amount),
+          {
+            cardNumber: cardNumber,
+            cardHolderName: holderName,
+            expirationMonth: expiryMonth,
+            expirationYear: expiryYear.length === 2 ? `20${expiryYear}` : expiryYear,
+            cvv: cvv,
+          },
+          1, // installments
+          saveCard,
+          {
+            name: customerNameCC,
+            email: customerEmailCC,
+          }
+        );
+        
+        // Reload saved cards if we saved a new one
+        if (saveCard && result.success) {
+          console.log('🔄 Reloading saved cards after saving new card');
+          await loadSavedCards();
         }
-      );
+      }
 
       console.log('💳 Credit Card result:', result);
       setPaymentResult(result);
 
-      // Check if 3DS data collection is required using native handler
+      // Check if 3DS data collection is required using native handler (only if 3DS is enabled)
       // Extract from the full payment result since it includes token response data
       const threeDSInfo = extractThreeDSInfo(result);
-      if (threeDSInfo.needsDataCollection && threeDSInfo.dataCollectionInfo) {
+      if (enable3DS && threeDSInfo.needsDataCollection && threeDSInfo.dataCollectionInfo) {
         console.log('🔒 3DS data collection required, starting native collection...');
         setIsPerformingDataCollection(true);
         setThreeDSStatus('🔒 Performing 3DS data collection...');
@@ -490,11 +549,14 @@ export default function TunaPaymentExample() {
         } finally {
           setIsPerformingDataCollection(false);
         }
+      } else if (!enable3DS && threeDSInfo.needsDataCollection) {
+        console.log('🔓 3DS data collection available but skipped (3DS disabled)');
+        setThreeDSStatus('🔓 3DS disabled - skipped data collection');
       }
 
-      // Check if 3DS challenge is required
+      // Check if 3DS challenge is required (only if 3DS is enabled)
       const challengeInfo = extractChallengeInfo(result.paymentResponse, TUNA_CONFIG.debug);
-      if (challengeInfo.needsChallenge && challengeInfo.challengeInfo) {
+      if (enable3DS && challengeInfo.needsChallenge && challengeInfo.challengeInfo) {
         console.log('🔒 3DS challenge required:', challengeInfo.challengeInfo.challengeUrl);
         setIsPerformingChallenge(true);
         setThreeDSStatus('🔒 Performing 3DS challenge...');
@@ -553,6 +615,9 @@ export default function TunaPaymentExample() {
         } finally {
           setIsPerformingChallenge(false);
         }
+      } else if (!enable3DS && challengeInfo.needsChallenge) {
+        console.log('🔓 3DS challenge available but skipped (3DS disabled)');
+        setThreeDSStatus('🔓 3DS disabled - skipped challenge');
       }
 
       if (result.success && result.paymentKey && result.methodId) {
@@ -570,11 +635,16 @@ export default function TunaPaymentExample() {
           }
         );
       } else if (result.success) {
-        setStatus('✅ Credit card payment successful!');
-        console.log('Payment Successful! 🎉', 'Your payment has been processed successfully.');
+        // Handle immediate success without polling
+        const statusMessage = getStatusMessage(result.paymentResponse);
+        setStatus(statusMessage);
+        console.log('Payment Completed! 🎉', 'Your payment has been processed successfully.');
       } else {
-        setStatus('❌ Credit card payment failed');
-        console.log('Payment Failed', result.error?.message || 'Credit card payment was not successful');
+        // Handle payment failure
+        const errorMessage = result.paymentResponse?.message || result.error?.message || 'Credit card payment was not successful';
+        const statusCode = result.paymentResponse?.code || 'unknown';
+        setStatus(`❌ Payment failed (Code: ${statusCode}): ${errorMessage}`);
+        console.log('Payment Failed', `${errorMessage}\n\nError Code: ${statusCode}`);
       }
     } catch (error) {
       console.error('Credit card error:', error);
@@ -632,6 +702,84 @@ export default function TunaPaymentExample() {
       );
     } else {
       console.log('Payment Status', `${statusInfo.message}\n\nStatus Code: ${statusUpdate.paymentStatusFound}`);
+    }
+  };
+
+  // Load saved credit cards
+  const loadSavedCards = async () => {
+    if (!sdk) {
+      console.log('❌ SDK not initialized');
+      return;
+    }
+
+    setIsLoadingSavedCards(true);
+    try {
+      console.log('🔍 Loading saved cards...');
+      const cards = await sdk.listSavedCards();
+      setSavedCards(cards);
+      console.log('💳 Loaded saved cards:', cards);
+      // Update form visibility based on card count
+      if (cards.length === 0) {
+        setShowCardForm(true);
+      }
+    } catch (error) {
+      console.error('❌ Failed to load saved cards:', error);
+      console.log('Error', 'Failed to load saved cards: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      setShowCardForm(true); // Show form if we can't load cards
+    } finally {
+      setIsLoadingSavedCards(false);
+    }
+  };
+
+  // Delete a saved card
+  const deleteSavedCard = async (token: string) => {
+    if (!sdk) {
+      console.log('❌ SDK not initialized');
+      return;
+    }
+
+    try {
+      console.log('🗑️ Deleting saved card...');
+      const result = await sdk.deleteSavedCard(token);
+      if (result.success) {
+        console.log('✅ Card deleted successfully');
+        // Reload saved cards
+        await loadSavedCards();
+      } else {
+        console.log('Error', 'Failed to delete card: ' + (result.message || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('❌ Failed to delete saved card:', error);
+      console.log('Error', 'Failed to delete card: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
+  };
+
+  // Helper function to get status message from payment response
+  const getStatusMessage = (paymentResponse: any): string => {
+    if (!paymentResponse) return '✅ Credit card payment successful!';
+    
+    const code = paymentResponse.code;
+    const status = paymentResponse.status;
+    const message = paymentResponse.message;
+    
+    // Map Tuna API response codes to user-friendly messages
+    switch (code) {
+      case 1:
+        return '✅ Payment successful!';
+      case 2:
+        return '✅ Payment approved!';
+      case 0:
+        return '❌ Payment failed';
+      default:
+        if (status === 'approved' || status === 'success') {
+          return '✅ Payment successful!';
+        } else if (status === 'denied' || status === 'failed') {
+          return `❌ Payment denied${message ? `: ${message}` : ''}`;
+        } else if (status === 'pending') {
+          return '🔄 Payment pending...';
+        } else {
+          return `📊 Payment status: ${status || 'unknown'}${message ? ` - ${message}` : ''}`;
+        }
     }
   };
 
@@ -848,8 +996,126 @@ export default function TunaPaymentExample() {
         />
       </View>
 
-      {/* Card Information */}
-      <Text style={[styles.label, styles.sectionTitle]}>Card Information</Text>
+      {/* Saved Cards Section */}
+      <Text style={[styles.label, styles.sectionTitle]}>
+        {savedCards.length > 0 ? 'Saved Cards' : 'Credit Card Payment'}
+      </Text>
+      
+      {savedCards.length > 0 && (
+        <View style={styles.savedCardsToggle}>
+          <TouchableOpacity
+            style={[styles.toggleButton, !showCardForm && styles.toggleButtonActive]}
+            onPress={() => setShowCardForm(false)}
+          >
+            <Text style={[styles.toggleButtonText, !showCardForm && styles.toggleButtonTextActive]}>
+              💳 Use Saved Card
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.toggleButton, showCardForm && styles.toggleButtonActive]}
+            onPress={() => {
+              setShowCardForm(true);
+              setSelectedSavedCard(null); // Clear selection when switching to form
+            }}
+          >
+            <Text style={[styles.toggleButtonText, showCardForm && styles.toggleButtonTextActive]}>
+              ➕ Add New Card
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      
+      {!showCardForm && savedCards.length > 0 ? (
+        // Show saved cards list
+        <View style={styles.savedCardsContainer}>
+          <View style={styles.savedCardsHeader}>
+            <TouchableOpacity
+              style={styles.refreshButton}
+              onPress={loadSavedCards}
+              disabled={isLoadingSavedCards}
+            >
+              <Text style={styles.refreshButtonText}>
+                {isLoadingSavedCards ? '🔄 Loading...' : '🔄 Refresh'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          
+          <ScrollView style={styles.savedCardsList} horizontal>
+            {savedCards.map((card, index) => (
+              <TouchableOpacity
+                key={card.token}
+                style={[
+                  styles.savedCardItem,
+                  selectedSavedCard === card.token && styles.savedCardSelected
+                ]}
+                onPress={() => {
+                  if (selectedSavedCard === card.token) {
+                    setSelectedSavedCard(null);
+                  } else {
+                    setSelectedSavedCard(card.token);
+                    // Pre-fill CVV field only - other fields not needed for saved cards
+                    setCvv(''); // CVV always needs to be entered fresh
+                  }
+                }}
+              >
+                <Text style={styles.savedCardBrand}>{card.brand || 'Card'}</Text>
+                <Text style={styles.savedCardNumber}>{card.maskedNumber}</Text>
+                <Text style={styles.savedCardHolder}>{card.cardHolderName}</Text>
+                <Text style={styles.savedCardExpiry}>
+                  {String(card.expirationMonth).padStart(2, '0')}/{card.expirationYear}
+                </Text>
+                <TouchableOpacity
+                  style={styles.deleteCardButton}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    deleteSavedCard(card.token);
+                  }}
+                >
+                  <Text style={styles.deleteCardText}>🗑️</Text>
+                </TouchableOpacity>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          
+          {selectedSavedCard && (
+            <View style={styles.cvvSection}>
+              <Text style={styles.label}>CVV for Selected Card</Text>
+              <TextInput
+                style={styles.input}
+                value={cvv}
+                onChangeText={setCvv}
+                placeholder="Enter CVV"
+                keyboardType="numeric"
+                maxLength={4}
+                secureTextEntry
+              />
+              
+              {/* Payment Button for Saved Cards */}
+              <TouchableOpacity
+                style={[
+                  styles.paymentButton,
+                  styles.creditCardButton,
+                  (!cvv || isLoading || paymentInProgress) && styles.disabledPaymentButton
+                ]}
+                onPress={handleCreditCard}
+                disabled={!cvv || isLoading || paymentInProgress}
+              >
+                {(isLoading || paymentInProgress) ? (
+                  <View style={styles.loadingButtonContent}>
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                    <Text style={styles.creditCardButtonText}>Processing...</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.creditCardButtonText}>💳 Pay with Saved Card</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      ) : showCardForm ? (
+        // Show new card form
+        <>
+          <Text style={[styles.label, styles.sectionTitle]}>Card Information</Text>
       
       <View style={styles.formGroup}>
         <Text style={styles.label}>Card Number</Text>
@@ -938,7 +1204,11 @@ export default function TunaPaymentExample() {
             <Text style={styles.creditCardButtonText}>Processing...</Text>
           </View>
         ) : (
-          <Text style={styles.creditCardButtonText}>💳 Pay with Credit Card</Text>
+          <Text style={styles.creditCardButtonText}>
+            {!showCardForm && selectedSavedCard ? '💳 Pay with Saved Card' : 
+             showCardForm ? '💳 Pay with New Card' : 
+             '💳 Pay with Credit Card'}
+          </Text>
         )}
       </TouchableOpacity>
 
@@ -977,6 +1247,8 @@ export default function TunaPaymentExample() {
           <ActivityIndicator size="small" color="#007AFF" style={styles.loader} />
         </View>
       )}
+        </>
+      ) : null}
     </View>
   );
 
@@ -1992,5 +2264,114 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#333',
     flex: 1,
+  },
+  // Saved Cards Styles
+  savedCardsContainer: {
+    marginBottom: 20,
+  },
+  savedCardsToggle: {
+    flexDirection: 'row',
+    marginBottom: 15,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+    padding: 2,
+  },
+  toggleButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  toggleButtonActive: {
+    backgroundColor: '#007AFF',
+  },
+  toggleButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#666',
+  },
+  toggleButtonTextActive: {
+    color: 'white',
+  },
+  savedCardsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  refreshButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  refreshButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  savedCardsList: {
+    maxHeight: 120,
+  },
+  savedCardItem: {
+    backgroundColor: 'white',
+    borderRadius: 8,
+    padding: 12,
+    marginRight: 10,
+    minWidth: 180,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    position: 'relative',
+  },
+  savedCardSelected: {
+    borderColor: '#007AFF',
+    borderWidth: 2,
+    backgroundColor: '#f0f8ff',
+  },
+  savedCardBrand: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  savedCardNumber: {
+    fontSize: 14,
+    color: '#666',
+    fontFamily: 'monospace',
+    marginBottom: 4,
+  },
+  savedCardHolder: {
+    fontSize: 12,
+    color: '#888',
+    marginBottom: 4,
+  },
+  savedCardExpiry: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '500',
+  },
+  deleteCardButton: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    padding: 5,
+  },
+  deleteCardText: {
+    fontSize: 16,
+  },
+  cvvSection: {
+    marginTop: 15,
+    padding: 15,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  noSavedCards: {
+    textAlign: 'center',
+    color: '#888',
+    fontStyle: 'italic',
+    padding: 20,
   },
 });
