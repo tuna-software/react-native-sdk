@@ -30,7 +30,7 @@
 ### 1. Installation
 
 ```bash
-npm install @tuna/react-native-payments
+npm install @tuna-software/react-native-sdk
 ```
 
 ### 2. Platform Setup
@@ -57,7 +57,7 @@ Add to your `android/app/src/main/AndroidManifest.xml`:
 ### 3. Basic Usage
 
 ```typescript
-import { TunaReactNative } from '@tuna/react-native-payments';
+import { TunaReactNative } from '@tuna-software/react-native-sdk';
 
 // Initialize the SDK
 const tunaSDK = new TunaReactNative({

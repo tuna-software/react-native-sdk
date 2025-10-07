@@ -1,26 +1,23 @@
 {
-  "name": "@tuna/react-native-payments",
+  "name": "@tuna-software/react-native-sdk",
   "version": "1.0.0",
   "description": "React Native payment processing SDK for Tuna with native Apple Pay and Google Pay support",
-  "type": "module",
-  "main": "dist/index.cjs.js",
-  "module": "dist/index.esm.js",
-  "types": "dist/index.d.ts",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
   "react-native": "src/index.ts",
   "source": "src/index.ts",
   "files": [
-    "dist",
     "src",
-    "android",
-    "ios",
-    "*.podspec",
-    "!**/__tests__",
-    "!**/__fixtures__",
-    "!**/__mocks__"
+    "example",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "!src/**/__tests__",
+    "!src/**/__mocks__",
+    "!example/TunaPaymentDemo/android/app/build",
+    "!example/**/node_modules"
   ],
   "scripts": {
-    "build": "rollup -c",
-    "build:dev": "rollup -c --watch",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
@@ -28,8 +25,7 @@
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "lint:fix": "eslint \"src/**/*.{ts,tsx}\" --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
-    "prepare": "npm run build",
-    "example": "cd example && npm start"
+    "example": "cd example/TunaPaymentDemo && npx expo start"
   },
   "keywords": [
     "react-native",
@@ -47,12 +43,15 @@
     "type": "git",
     "url": "https://github.com/tuna-software/react-native-sdk.git"
   },
-  "author": "Tuna Software Inc",
+  "author": "Tuna Software Inc <tech@tuna.uy>",
   "homepage": "https://tuna.uy",
   "bugs": {
     "url": "https://github.com/tuna-software/react-native-sdk/issues"
   },
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "peerDependencies": {
     "@rnw-community/react-native-payments": "^1.6.0",
     "react": ">=17.0.0",
