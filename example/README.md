@@ -1,53 +1,40 @@
-# Tuna React Native SDK Examples
+# Tuna React Native SDK Example
 
-This directory contains examples demonstrating how to use the Tuna React Native SDK with native payment capabilities.
+This folder contains a complete React Native example app demonstrating the Tuna Payment SDK integration.
 
-## Examples Overview
+## TunaPaymentDemo
 
-### 1. NativePaymentsExample.tsx
-Demonstrates native payment integration using Apple Pay (iOS) and Google Pay (Android) through `@rnw-community/react-native-payments`.
+The `TunaPaymentDemo` is a full-featured example application showcasing:
 
-**Features:**
-- Native payment sheets (no WebView)
-- Platform-specific payment methods
-- Real-time status monitoring
-- Comprehensive error handling
-- Production-ready implementation
+- **Apple Pay integration** (iOS)
+- **Google Pay integration** (Android) 
+- **Credit Card payments** with 3D Secure support
+- **Saved Cards management** (list, select, delete)
+- **PIX payments** (Brazil)
+- **Real-time payment status tracking**
 
-**Key Benefits:**
-- 📱 Native iOS/Android payment experience
-- 🔒 Secure tokenization through native APIs
-- 🚫 Zero WebView dependencies
-- ⚡ Platform-optimized performance
-- 🎨 Follows platform design guidelines
-
-### 2. PIXPaymentsExample.tsx
-Shows how to implement PIX payments for the Brazilian market.
-
-**Features:**
-- PIX QR code generation
-- Payment instructions in Portuguese
-- Expiration time handling
-- Customer data collection
-- Real-time payment status
-
-**PIX Benefits:**
-- ⚡ Instant payments (24/7/365)
-- 💰 No transaction fees for consumers
-- 🔐 High security with Central Bank regulation
-- 📈 Wide adoption in Brazil
-- 📱 Mobile-first experience
-
-### 3. SimpleExample.tsx
-Basic implementation showing core SDK functionality.
-
-## Quick Start
-
-### 1. Install Dependencies
+## Running the Example
 
 ```bash
-npm install @tuna/react-native-payments
-npm install @rnw-community/react-native-payments
+cd TunaPaymentDemo
+npm install
+npx react-native run-android  # or run-ios
+```
+
+## Key Features Demonstrated
+
+- ✅ Real Tuna API integration
+- ✅ Native payment methods (Apple Pay, Google Pay)
+- ✅ Secure credit card tokenization
+- ✅ 3DS authentication flows
+- ✅ Saved card management
+- ✅ PIX QR code generation
+- ✅ Payment status polling
+- ✅ Error handling and validation
+
+## Integration Guide
+
+See the main README for complete integration instructions.
 ```
 
 ### 2. iOS Setup (Apple Pay)

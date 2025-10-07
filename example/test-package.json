@@ -1,8 +1,0 @@
-{
-  "name": "tuna-example-test",
-  "type": "module",
-  "version": "1.0.0",
-  "scripts": {
-    "test-example": "node verify-runnable.mjs"
-  }
-}

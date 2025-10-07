@@ -90,11 +90,13 @@ const getFromClipboard = async (): Promise<string> => {
   return '';
 };
 
-// Import the REAL Tuna SDK with actual API implementation
+// Import the working Tuna SDK from the example directory
 import { TunaReactNative, TunaReactNativeConfig } from './src/TunaReactNativeReal';
 import type { 
   ApplePayConfig,
-  GooglePayConfig
+  GooglePayConfig,
+  PaymentDetails,
+  PaymentResult
 } from './src/types/payment';
 
 // Import native 3DS handler (no WebViews)

@@ -1,52 +1,300 @@
-# react-native
+# Tuna React Native SDK
 
+🚀 **Modern React Native payment SDK** for seamless payment integration with **Apple Pay**, **Google Pay**, **Credit Cards**, and **PIX** payments.
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Platform](https://img.shields.io/badge/platform-ios%20%7C%20android-lightgrey.svg)](https://github.com/tuna-software/react-native-sdk)
+[![React Native](https://img.shields.io/badge/React%20Native-%E2%89%A50.60-blue.svg)](https://reactnative.dev/)
 
-## Getting started
+## ✨ Features
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+- 🍎 **Apple Pay** - Native iOS payment experience
+- 🤖 **Google Pay** - Native Android payment experience  
+- 💳 **Credit Cards** - Secure tokenization with 3D Secure support
+- 💾 **Saved Cards** - List, select, and manage saved payment methods
+- 🇧🇷 **PIX Payments** - Brazilian instant payment system
+- 🔒 **PCI Compliant** - Level 1 PCI DSS certified infrastructure
+- 📱 **Native UI** - Platform-specific payment sheets and components
+- ⚡ **Real-time** - Live payment status tracking and webhooks
+- 🛡️ **Secure** - End-to-end encryption and tokenization
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+## 📋 Requirements
 
-## Add your files
+- React Native >= 0.60
+- iOS 11+ (for Apple Pay)
+- Android API level 21+ (for Google Pay)
+- Tuna merchant account
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+## 🚀 Quick Start
 
+### 1. Installation
+
+```bash
+npm install @tuna/react-native-payments
 ```
-cd existing_repo
-git remote add origin https://gitlab.dev.tuna.awc/plugins-ecommerce/react-native.git
-git branch -M main
-git push -uf origin main
+
+### 2. Platform Setup
+
+#### iOS (Apple Pay)
+Add to your `ios/YourApp/Info.plist`:
+```xml
+<key>PKPaymentNetworks</key>
+<array>
+    <string>visa</string>
+    <string>masterCard</string>
+    <string>amex</string>
+</array>
 ```
 
-## Integrate with your tools
+#### Android (Google Pay)
+Add to your `android/app/src/main/AndroidManifest.xml`:
+```xml
+<meta-data
+    android:name="com.google.android.gms.wallet.api.enabled"
+    android:value="true" />
+```
 
-- [ ] [Set up project integrations](https://gitlab.dev.tuna.awc/plugins-ecommerce/react-native/-/settings/integrations)
+### 3. Basic Usage
 
-## Collaborate with your team
+```typescript
+import { TunaReactNative } from '@tuna/react-native-payments';
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+// Initialize the SDK
+const tunaSDK = new TunaReactNative({
+  environment: 'sandbox', // or 'production'
+  debug: true
+});
 
-## Test and Deploy
+// Initialize with your session
+await tunaSDK.initialize('your-session-id');
 
-Use the built-in continuous integration in GitLab.
+// Process a credit card payment
+const result = await tunaSDK.processCreditCardPayment(
+  100.00, // amount
+  {
+    cardNumber: '4111111111111111',
+    cardHolderName: 'John Doe',
+    expirationMonth: '12',
+    expirationYear: '2025',
+    cvv: '123'
+  },
+  1, // installments
+  true, // save card
+  {
+    name: 'John Doe',
+    email: 'john@example.com'
+  }
+);
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+if (result.success) {
+  console.log('Payment successful!', result.paymentId);
+} else {
+  console.log('Payment failed:', result.error);
+}
+```
 
-***
+## 💳 Payment Methods
 
-# Editing this README
+### Apple Pay (iOS)
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+```typescript
+// Check availability
+const isAvailable = await tunaSDK.canMakeApplePayPayments();
+
+if (isAvailable) {
+  // Setup Apple Pay
+  await tunaSDK.setupApplePay({
+    merchantId: 'your-merchant-id',
+    countryCode: 'US',
+    currencyCode: 'USD'
+  });
+
+  // Process payment
+  const result = await tunaSDK.processApplePayPayment(100.00, {
+    name: 'Customer Name',
+    email: 'customer@example.com'
+  });
+}
+```
+
+### Google Pay (Android)
+
+```typescript
+// Check availability
+const isReady = await tunaSDK.isGooglePayReady();
+
+if (isReady) {
+  // Setup Google Pay
+  await tunaSDK.setupGooglePay({
+    environment: 'TEST', // or 'PRODUCTION'
+    merchantId: 'your-merchant-id',
+    gatewayMerchantId: 'your-gateway-merchant-id'
+  });
+
+  // Process payment
+  const result = await tunaSDK.processGooglePayPayment(100.00, {
+    name: 'Customer Name',
+    email: 'customer@example.com'
+  });
+}
+```
+
+### PIX (Brazil)
+
+```typescript
+// Generate PIX payment
+const pixResult = await tunaSDK.generatePIXPayment(100.00, {
+  name: 'João Silva',
+  email: 'joao@example.com',
+  document: '12345678901', // CPF
+  phone: '+5511999999999'
+});
+
+if (pixResult.success) {
+  // Display QR code
+  console.log('PIX QR Code:', pixResult.qrCode);
+  console.log('Copy & Paste:', pixResult.pixCopyPaste);
+}
+```
+
+### Saved Cards
+
+```typescript
+// List saved cards
+const savedCards = await tunaSDK.listSavedCards();
+
+// Pay with saved card (requires CVV)
+const result = await tunaSDK.processSavedCardPayment(
+  100.00,      // amount
+  'card-token', // saved card token
+  '123',       // CVV
+  1,           // installments
+  { name: 'Customer', email: 'customer@example.com' }
+);
+
+// Delete saved card
+await tunaSDK.deleteSavedCard('card-token');
+```
+
+## 🔧 Configuration
+
+### Environment Setup
+
+```typescript
+const config = {
+  environment: 'sandbox', // 'sandbox' | 'production'
+  debug: true,
+  sessionTimeout: 30 * 60 * 1000, // 30 minutes
+};
+
+const sdk = new TunaReactNative(config);
+```
+
+### Session Management
+
+```typescript
+// Create a new session (server-side)
+const sessionResponse = await fetch('https://your-backend.com/create-tuna-session', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ customerId: 'user-123' })
+});
+
+const { sessionId } = await sessionResponse.json();
+
+// Initialize SDK with session
+await sdk.initialize(sessionId);
+```
+
+## 📱 Example App
+
+Run the complete example app to see all features in action:
+
+```bash
+cd example/TunaPaymentDemo
+npm install
+npx react-native run-android  # or run-ios
+```
+
+The example demonstrates:
+- All payment methods (Apple Pay, Google Pay, Credit Cards, PIX)
+- Saved card management
+- 3D Secure flows
+- Real-time status tracking
+- Error handling
+
+## 🛡️ Security
+
+- **PCI Level 1** certified infrastructure
+- **End-to-end encryption** for all sensitive data
+- **Tokenization** - Card data never touches your servers
+- **3D Secure** - Strong customer authentication
+- **Fraud protection** - Advanced risk analysis
+
+## 📚 API Reference
+
+### Core Methods
+
+| Method | Description | Returns |
+|--------|-------------|---------|
+| `initialize(sessionId)` | Initialize SDK with session | `Promise<void>` |
+| `processCreditCardPayment()` | Process credit card payment | `Promise<PaymentResult>` |
+| `processApplePayPayment()` | Process Apple Pay payment | `Promise<PaymentResult>` |
+| `processGooglePayPayment()` | Process Google Pay payment | `Promise<PaymentResult>` |
+| `generatePIXPayment()` | Generate PIX payment | `Promise<PIXResult>` |
+| `listSavedCards()` | List customer's saved cards | `Promise<SavedCard[]>` |
+| `deleteSavedCard()` | Delete a saved card | `Promise<DeleteResult>` |
+
+### Types
+
+```typescript
+interface PaymentResult {
+  success: boolean;
+  paymentId?: string;
+  paymentKey?: string;
+  status?: string;
+  error?: string;
+  threeDSData?: ThreeDSData;
+}
+
+interface SavedCard {
+  token: string;
+  brand: string;
+  maskedNumber: string;
+  cardHolderName: string;
+  expirationMonth: number;
+  expirationYear: number;
+}
+```
+
+## 🌍 Supported Countries
+
+- 🇺🇸 **United States** - Apple Pay, Google Pay, Credit Cards
+- 🇧🇷 **Brazil** - PIX, Credit Cards, Google Pay
+- 🇲🇽 **Mexico** - Credit Cards, Google Pay
+- 🇦🇷 **Argentina** - Credit Cards
+- 🇨🇱 **Chile** - Credit Cards
+- 🇨🇴 **Colombia** - Credit Cards
+- 🇺🇾 **Uruguay** - Credit Cards
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🆘 Support
+
+- 📧 **Email**: support@tuna.uy
+- 📚 **Documentation**: [https://dev.tuna.uy](https://dev.tuna.uy)
+- 🐛 **Issues**: [GitHub Issues](https://github.com/tuna-software/react-native-sdk/issues)
+- 💬 **Discord**: [Tuna Community](https://discord.gg/tuna)
+
+---
+
+Made with ❤️ by [Tuna](https://tuna.uy)
 
 ## Suggestions for a good README
 

@@ -168,6 +168,7 @@ export interface PaymentResult {
   success?: boolean;
   paymentKey?: string;
   methodId?: string;
+  token?: string;
   tokenData?: TokenData;
   paymentResponse?: any;
   error?: TunaError;
@@ -210,13 +211,11 @@ export interface StatusResult {
   error?: TunaError;
 }
 
-export interface PIXResult {
-  success: boolean;
+export interface PIXResult extends PaymentResult {
   qrCode?: string;
   qrCodeBase64?: string;
-  paymentKey?: string;
-  expiresAt?: string;
-  error?: TunaError;
+  copyPasteCode?: string;
+  expirationDate?: Date;
 }
 
 export interface BoletoResult {

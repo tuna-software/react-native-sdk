@@ -1,12 +1,5 @@
 /**
- * Tuna React Native// Main SDK class
-export { 
-  TunaReactNative, 
-  createTunaReactNative,
-  createProductionTunaReactNative,
-  createSandboxTunaReactNative,
-  type TunaReactNativeConfig 
-} from './TunaReactNativeSimple';nt SDK
+ * Tuna React Native SDK
  * 
  * Provides React Native payment processing capabilities using native payment APIs
  * including Apple Pay and Google Pay through @rnw-community/react-native-payments
@@ -29,12 +22,20 @@ export * from './core';
 // Payment adapters
 export * from './adapters';
 
-// Main SDK class
+// Main SDK class (simple version that works without React Native dependencies)
 export { 
   TunaReactNative, 
   createTunaReactNative,
+  createProductionTunaReactNative,
+  createSandboxTunaReactNative,
   type TunaReactNativeConfig 
 } from './TunaReactNativeSimple';
+
+// Enhanced SDK class with all features (requires React Native)
+export { 
+  TunaReactNativeEnhanced,
+  type TunaReactNativeConfig as TunaReactNativeEnhancedConfig
+} from './core/TunaReactNativeCore';
 
 // React hooks
 export * from './hooks';
