@@ -83,6 +83,9 @@ export const THREE_DS_WINDOW_SIZES = {
   SIZE_05: { width: '100%', height: '100%' },
 } as const;
 
+// 3DS Landing Page URL
+export const THREE_DS_LANDING_URL = 'https://threedslanding-28449915088.europe-west1.run.app';
+
 export type PaymentMethodType = typeof PAYMENT_METHOD_TYPES[keyof typeof PAYMENT_METHOD_TYPES];
 export type CardBrand = typeof CARD_BRANDS[keyof typeof CARD_BRANDS];
 export type ApplePayNetwork = typeof APPLE_PAY_NETWORKS[keyof typeof APPLE_PAY_NETWORKS];

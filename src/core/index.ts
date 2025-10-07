@@ -13,6 +13,7 @@ export { PaymentManager } from './payment';
 
 // Phase 4: Advanced features
 export { ThreeDSHandler, createThreeDSHandler } from './ThreeDSHandler';
+export type { ThreeDSHandlerConfig } from './ThreeDSHandler';
 export { AntifraudManager, createAntifraudManager } from './AntifraudManager';
 export { StatusPoller, createStatusPoller } from './StatusPoller';
 

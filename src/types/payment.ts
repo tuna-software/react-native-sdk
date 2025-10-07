@@ -400,6 +400,12 @@ export interface ThreeDSChallengeInfo {
   messageVersion?: string;
 }
 
+export interface ThreeDSConfig {
+  deepLink?: string;  // Deep link to return to app after 3DS completion
+  autoClose?: boolean; // Whether to auto-close browser after completion (default: true)
+  landingUrl?: string; // Custom 3DS landing page URL (defaults to Tuna's)
+}
+
 export interface ThreeDSResult {
   success: boolean;
   authenticationData?: any;

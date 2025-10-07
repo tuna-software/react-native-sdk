@@ -12,26 +12,34 @@ import {
   ThreeDSResult,
   ThreeDSDataCollectionInfo,
   ThreeDSChallengeInfo,
+  ThreeDSConfig,
   SetupPayerInfo,
 } from '../types/payment';
 import { Tuna3DSError, TunaNativePaymentError } from '../utils/errors';
+import { THREE_DS_LANDING_URL } from '../constants/config';
 
-export interface ThreeDSConfig {
+export interface ThreeDSHandlerConfig {
   dataCollectionTimeout?: number; // Default: 10 seconds
   challengeTimeout?: number; // Default: 5 minutes
   autoDataCollection?: boolean; // Default: true
+  deepLink?: string;  // Deep link to return to app after 3DS completion
+  autoClose?: boolean; // Whether to auto-close browser after completion (default: true)
+  landingUrl?: string; // Custom 3DS landing page URL (defaults to Tuna's)
 }
 
 export class ThreeDSHandler {
-  private config: ThreeDSConfig;
+  private config: ThreeDSHandlerConfig;
   private webViewComponent: any; // Reference to React Native WebView component
   private dataCollectionCompleted: boolean = false;
 
-  constructor(config: ThreeDSConfig = {}) {
+  constructor(config: ThreeDSHandlerConfig = {}) {
     this.config = {
       dataCollectionTimeout: config.dataCollectionTimeout || 10000,
       challengeTimeout: config.challengeTimeout || 300000,
       autoDataCollection: config.autoDataCollection !== false,
+      deepLink: config.deepLink,
+      autoClose: config.autoClose !== false,
+      landingUrl: config.landingUrl || THREE_DS_LANDING_URL,
       ...config,
     };
   }
@@ -112,6 +120,45 @@ export class ThreeDSHandler {
   }
 
   /**
+   * Generates the 3DS landing page URL for external browser navigation
+   * This is useful when you want to open the 3DS challenge in the system browser
+   * instead of using a WebView component
+   */
+  buildChallengeUrl(threeDSInfo: ThreeDSChallengeInfo, options?: ThreeDSConfig): string {
+    const config = { ...this.config, ...options };
+    return this.buildLandingPageUrl(threeDSInfo, config);
+  }
+
+  /**
+   * Static helper to build 3DS challenge URL without creating a handler instance
+   */
+  static buildChallengeUrl(threeDSInfo: ThreeDSChallengeInfo, config?: ThreeDSConfig): string {
+    const baseUrl = config?.landingUrl || THREE_DS_LANDING_URL;
+    const params = new URLSearchParams();
+
+    // Required parameters
+    params.append('challengeUrl', threeDSInfo.url);
+    params.append('pareq', threeDSInfo.token);
+    params.append('termUrl', threeDSInfo.url); // Usually the same as challengeUrl for 3DS 2.0
+
+    // Optional parameters
+    if (threeDSInfo.paRequest) {
+      params.append('md', threeDSInfo.paRequest);
+    }
+    if (threeDSInfo.transactionId) {
+      params.append('transactionId', threeDSInfo.transactionId);
+    }
+    if (config?.deepLink) {
+      params.append('deepLink', config.deepLink);
+    }
+    if (config?.autoClose !== undefined) {
+      params.append('autoClose', config.autoClose.toString());
+    }
+
+    return `${baseUrl}?${params.toString()}`;
+  }
+
+  /**
    * Executes the data collection process
    */
   private async executeDataCollection(info: ThreeDSDataCollectionInfo): Promise<ThreeDSDataCollectionInfo> {
@@ -162,7 +209,7 @@ export class ThreeDSHandler {
    */
   private performWebViewDataCollection(
     info: ThreeDSDataCollectionInfo,
-    timeout: NodeJS.Timeout,
+    timeout: any,
     resolve: (value: ThreeDSDataCollectionInfo) => void,
     reject: (reason: any) => void
   ): void {
@@ -200,28 +247,26 @@ export class ThreeDSHandler {
   }
 
   /**
-   * Performs challenge using WebView
+   * Performs challenge using WebView redirected to landing page
    */
   private performWebViewChallenge(
     challengeInfo: ThreeDSChallengeInfo,
-    timeout: NodeJS.Timeout,
+    timeout: any,
     resolve: (value: ThreeDSResult) => void,
     reject: (reason: any) => void
   ): void {
-    const html = this.generateChallengeHTML(challengeInfo);
-
-    // Create WebView source
-    const source = { html };
+    // Build landing page URL with 3DS parameters
+    const landingUrl = this.buildLandingPageUrl(challengeInfo);
 
     // Set up message handler for challenge completion
     const messageHandler = (event: any) => {
       const { data } = event.nativeEvent;
       try {
         const result = JSON.parse(data);
-        if (result.type === '3ds-challenge-complete') {
+        if (result.type === '3DSComplete' || result.type === 'closeWebView') {
           clearTimeout(timeout);
           resolve({
-            success: result.success,
+            success: result.result === 'Success',
             authenticationData: result.authenticationData,
             transactionId: challengeInfo.transactionId,
             timestamp: new Date(),
@@ -229,13 +274,53 @@ export class ThreeDSHandler {
           });
         }
       } catch (error) {
-        console.warn('Failed to parse 3DS challenge result:', error);
+        // Handle non-JSON messages
+        if (typeof data === 'string' && data.includes('Challenge done')) {
+          clearTimeout(timeout);
+          resolve({
+            success: true,
+            authenticationData: null,
+            transactionId: challengeInfo.transactionId,
+            timestamp: new Date(),
+            provider: challengeInfo.provider,
+          });
+        }
       }
     };
 
-    // Load the HTML into WebView with message handler
+    // Load the landing page URL into WebView with message handler
     this.webViewComponent.postMessage = messageHandler;
-    this.webViewComponent.source = source;
+    this.webViewComponent.source = { uri: landingUrl };
+  }
+
+  /**
+   * Builds the landing page URL with 3DS challenge parameters
+   */
+  private buildLandingPageUrl(challengeInfo: ThreeDSChallengeInfo, customConfig?: Partial<ThreeDSHandlerConfig>): string {
+    const config = customConfig || this.config;
+    const baseUrl = config.landingUrl || THREE_DS_LANDING_URL;
+    const params = new URLSearchParams();
+
+    // Required parameters
+    params.append('challengeUrl', challengeInfo.url);
+    params.append('pareq', challengeInfo.token);
+    params.append('termUrl', challengeInfo.url); // Usually the same as challengeUrl for 3DS 2.0
+
+    // Optional parameters
+    if (challengeInfo.paRequest) {
+      params.append('md', challengeInfo.paRequest);
+    }
+    if (challengeInfo.transactionId) {
+      params.append('transactionId', challengeInfo.transactionId);
+    }
+    if (config.deepLink) {
+      params.append('deepLink', config.deepLink);
+    }
+    if (config.autoClose !== undefined) {
+      params.append('autoClose', config.autoClose.toString());
+    }
+
+    return `${baseUrl}?${params.toString()}`;
   }
 
   /**
@@ -243,7 +328,7 @@ export class ThreeDSHandler {
    */
   private performIframeDataCollection(
     info: ThreeDSDataCollectionInfo,
-    timeout: NodeJS.Timeout,
+    timeout: any,
     resolve: (value: ThreeDSDataCollectionInfo) => void,
     reject: (reason: any) => void
   ): void {
@@ -491,6 +576,6 @@ export class ThreeDSHandler {
 /**
  * Creates a new 3DS handler instance
  */
-export function createThreeDSHandler(config?: ThreeDSConfig): ThreeDSHandler {
+export function createThreeDSHandler(config?: ThreeDSHandlerConfig): ThreeDSHandler {
   return new ThreeDSHandler(config);
 }

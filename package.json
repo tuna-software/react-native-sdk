@@ -1,6 +1,6 @@
 {
   "name": "@tuna-software/react-native-sdk",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "React Native payment processing SDK for Tuna with native Apple Pay and Google Pay support",
   "main": "src/index.ts",
   "types": "src/index.ts",

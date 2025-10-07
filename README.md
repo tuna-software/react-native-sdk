@@ -267,6 +267,101 @@ interface SavedCard {
 }
 ```
 
+## 🔒 3D Secure (3DS) Authentication
+
+The SDK automatically handles 3D Secure authentication when required by your payment processor. For React Native apps, 3DS challenges are handled through a secure landing page.
+
+### Configuration
+
+```typescript
+import { ThreeDSHandler } from '@tuna-software/react-native-sdk';
+
+// Configure 3DS with deep linking
+const threeDSConfig = {
+  deepLink: 'myapp://payment-complete', // Return to your app after completion
+  autoClose: true, // Auto-close browser when done
+};
+
+// Create a handler
+const threeDSHandler = new ThreeDSHandler(threeDSConfig);
+```
+
+### Handling 3DS Challenges
+
+When a payment requires 3DS authentication, the SDK will provide a `threeDSData` object:
+
+```typescript
+const paymentResult = await tunaSDK.processCreditCardPayment(cardData, paymentInfo);
+
+if (paymentResult.threeDSData) {
+  // Generate 3DS challenge URL
+  const challengeUrl = ThreeDSHandler.buildChallengeUrl(
+    paymentResult.threeDSData,
+    {
+      deepLink: 'myapp://payment-complete',
+      autoClose: true
+    }
+  );
+  
+  // Open in system browser
+  await Linking.openURL(challengeUrl);
+  
+  // Or use WebView
+  // <WebView source={{ uri: challengeUrl }} />
+}
+```
+
+### Deep Linking Setup
+
+To handle returning to your app after 3DS completion:
+
+**iOS (Info.plist):**
+```xml
+<key>CFBundleURLTypes</key>
+<array>
+  <dict>
+    <key>CFBundleURLName</key>
+    <string>myapp</string>
+    <key>CFBundleURLSchemes</key>
+    <array>
+      <string>myapp</string>
+    </array>
+  </dict>
+</array>
+```
+
+**Android (android/app/src/main/AndroidManifest.xml):**
+```xml
+<activity
+  android:name=".MainActivity"
+  android:launchMode="singleTop">
+  <intent-filter>
+    <action android:name="android.intent.action.VIEW" />
+    <category android:name="android.intent.category.DEFAULT" />
+    <category android:name="android.intent.category.BROWSABLE" />
+    <data android:scheme="myapp" />
+  </intent-filter>
+</activity>
+```
+
+**React Native:**
+```typescript
+import { Linking } from 'react-native';
+
+// Listen for deep link
+const handleDeepLink = (url: string) => {
+  if (url.startsWith('myapp://payment-complete')) {
+    // 3DS completed, check payment status
+    // You might want to poll payment status or navigate to success screen
+  }
+};
+
+useEffect(() => {
+  const subscription = Linking.addEventListener('url', handleDeepLink);
+  return () => subscription?.remove();
+}, []);
+```
+
 ## 🌍 Supported Countries
 
 - 🇺🇸 **United States** - Apple Pay, Google Pay, Credit Cards
