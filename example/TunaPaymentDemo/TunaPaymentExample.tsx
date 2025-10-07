@@ -283,11 +283,11 @@ export default function TunaPaymentExample() {
         
         if (isGooglePayReady) {
           await tunaSDK.setupGooglePay({
-            environment: 'TEST',
+            environment: 'PRODUCTION',
             apiVersion: 2,
             apiVersionMinor: 0,
             merchantInfo: {
-              merchantName: 'Tuna Demo Store',
+              merchantName: 'Tuna',
             },
             tokenizationSpecification: {
               type: 'PAYMENT_GATEWAY',

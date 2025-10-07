@@ -46,7 +46,7 @@ const googlePayConfig: GooglePayConfig = {
   apiVersion: 2,
   apiVersionMinor: 0,
   merchantInfo: {
-    merchantName: 'Tuna Store',
+    merchantName: 'Tuna',
     merchantId: 'BCR2DN6TR7QYLIKK',
   },
   allowedAuthMethods: ['PAN_ONLY', 'CRYPTOGRAM_3DS'],
