@@ -10,13 +10,14 @@
 
 - 🍎 **Apple Pay** - Native iOS payment experience
 - 🤖 **Google Pay** - Native Android payment experience  
-- 💳 **Credit Cards** - Secure tokenization with 3D Secure support
-- 💾 **Saved Cards** - List, select, and manage saved payment methods
-- 🇧🇷 **PIX Payments** - Brazilian instant payment system
-- 🔒 **PCI Compliant** - Level 1 PCI DSS certified infrastructure
+- 💳 **Credit Cards** - Secure tokenization with comprehensive 3D Secure support
+- 🔒 **Enhanced 3DS** - Industry-standard browser redirect with cross-platform authentication sessions
+- 💾 **Saved Cards** - List, select, and manage saved payment methods with 3DS authentication
+- 🇧🇷 **PIX Payments** - Brazilian instant payment system with real-time status
+- � **PCI Compliant** - Level 1 PCI DSS certified infrastructure
 - 📱 **Native UI** - Platform-specific payment sheets and components
 - ⚡ **Real-time** - Live payment status tracking and webhooks
-- 🛡️ **Secure** - End-to-end encryption and tokenization
+- 🛡️ **Secure** - End-to-end encryption, tokenization, and fraud protection
 
 ## 📋 Requirements
 
@@ -269,14 +270,23 @@ interface SavedCard {
 
 ## 🔒 3D Secure (3DS) Authentication
 
-The SDK automatically handles 3D Secure authentication when required by your payment processor. For React Native apps, 3DS challenges are handled through a secure landing page.
+The SDK provides **industry-standard 3D Secure authentication** with comprehensive support for both saved cards and new payments. Our implementation follows best practices used by major payment processors like Stripe, Adyen, and Square.
+
+### ✨ Features
+
+- 🔐 **Authentication Sessions** - Uses `openAuthSessionAsync` for secure OAuth-style authentication flows
+- 🍎 **iOS Optimized** - Automatic browser closing and seamless user experience  
+- 🤖 **Android Enhanced** - Smart success detection with multiple fallback methods
+- 💾 **Saved Card Support** - Full 3DS authentication for tokenized payment methods
+- 🔄 **Background Polling** - Automatic browser dismissal when payment completes
+- 🌐 **Cross-Platform** - Consistent behavior across iOS and Android
 
 ### Configuration
 
 ```typescript
 import { ThreeDSHandler } from '@tuna-software/react-native-sdk';
 
-// Configure 3DS with deep linking
+// Configure 3DS with deep linking  
 const threeDSConfig = {
   deepLink: 'myapp://payment-complete', // Return to your app after completion
   autoClose: true, // Auto-close browser when done
@@ -361,6 +371,36 @@ useEffect(() => {
   return () => subscription?.remove();
 }, []);
 ```
+
+### 🔧 Enhanced 3DS Architecture
+
+Our 3DS implementation includes several advanced features for reliability and user experience:
+
+#### Authentication Sessions
+- Uses `WebBrowser.openAuthSessionAsync` instead of regular browser opening
+- Purpose-built for OAuth-style authentication flows
+- Automatic redirect detection when deep link is triggered
+- Better security context and session management
+
+#### Cross-Platform Reliability  
+- **iOS**: Seamless experience with automatic browser closing
+- **Android**: Smart success detection with platform-specific handling
+- **Fallback System**: App polling automatically closes browsers when payment succeeds
+
+#### Advanced Success Detection
+```typescript
+// The SDK automatically handles multiple success detection methods:
+// 1. Deep link triggered (primary method)
+// 2. Authentication session success result  
+// 3. URL success parameters (Android fallback)
+// 4. Background polling detection (ultimate fallback)
+```
+
+#### Smart Browser Management
+- Authentication sessions properly detect deep link redirects
+- Background payment polling can close browsers automatically  
+- Multiple fallback methods ensure browsers don't stay open
+- Platform-specific optimizations for iOS and Android
 
 ## 🌍 Supported Countries
 

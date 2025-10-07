@@ -16,7 +16,10 @@ import {
   TextInput,
   Switch,
   Image,
+  Alert,
+  Linking,
 } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import QRCode from 'qrcode';
 // Multi-approach clipboard functionality that works in different environments
 const copyToClipboard = async (text: string) => {
@@ -203,6 +206,7 @@ export default function TunaPaymentExample() {
   const [paymentInProgress, setPaymentInProgress] = useState(false);
   const [currentPaymentId, setCurrentPaymentId] = useState<string>('');
   const [paymentResult, setPaymentResult] = useState<any>(null);
+  const [has3DSChallengeOpen, setHas3DSChallengeOpen] = useState(false);
 
   // Generate consistent partnerUniqueId for session matching
   const [partnerUniqueId] = useState(() => {
@@ -241,11 +245,33 @@ export default function TunaPaymentExample() {
     }
   }, [applePayAvailable, googlePayAvailable]);
 
+  // Handle deep links for 3DS completion
+  useEffect(() => {
+    const handleDeepLink = (event: { url: string }) => {
+      const url = event.url;
+      console.log('🔗 Deep link received:', url);
+      if (url.startsWith('tunapaymentdemo://3ds-complete')) {
+        // Silent handling - no disruptive alert, just log completion
+        console.log('✅ 3DS authentication flow completed - returned from browser');
+      }
+    };
+
+    const subscription = Linking.addEventListener('url', handleDeepLink);
+    
+    // Check if app was opened from a deep link
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        handleDeepLink({ url });
+      }
+    });
+
+    return () => subscription?.remove();
+  }, []);
+
   const initializeSDK = async () => {
     try {
       if (!sessionId.trim()) {
-        console.log('Error', 'Please enter a valid session ID');
-        return;
+        return; // Early return for invalid session ID
       }
       
       setIsLoading(true);
@@ -338,7 +364,6 @@ export default function TunaPaymentExample() {
 
   const handleApplePay = async () => {
     console.log('🍎 Apple Pay button clicked!');
-    console.log('Debug', '🍎 Apple Pay button was clicked! Check console for logs.');
     
     if (!sdk) {
       console.log('❌ SDK not initialized');
@@ -372,7 +397,7 @@ export default function TunaPaymentExample() {
         );
       } else {
         setStatus('Apple Pay payment failed');
-        console.log('Payment Failed', result.error || 'Unknown error');
+        // Payment failed - log silently
       }
     } catch (error) {
       console.error('Apple Pay error:', error);
@@ -416,7 +441,7 @@ export default function TunaPaymentExample() {
         );
       } else {
         setStatus('Google Pay payment failed');
-        console.log('Payment Failed', result.error || 'Unknown error');
+        // Payment failed - log silently
       }
     } catch (error) {
       console.error('Google Pay error:', error);
@@ -438,7 +463,7 @@ export default function TunaPaymentExample() {
 
     // Check if payment already in progress
     if (paymentInProgress) {
-      console.log('Warning', 'A payment is already in progress. Please wait...');
+      console.warn('⚠️ Payment already in progress');
       return;
     }
 
@@ -446,22 +471,22 @@ export default function TunaPaymentExample() {
     if (!showCardForm && selectedSavedCard) {
       // Using saved card - only CVV required
       if (!cvv) {
-        console.log('Validation Error', 'Please enter CVV for the selected saved card');
+        console.warn('⚠️ CVV required for saved card');
         return;
       }
     } else if (showCardForm) {
       // Using new card - all fields required
       if (!cardNumber || !expiryMonth || !expiryYear || !cvv || !holderName) {
-        console.log('Validation Error', 'Please fill in all credit card fields');
+        console.warn('⚠️ All credit card fields required');
         return;
       }
     } else {
-      console.log('Validation Error', 'Please select a saved card or add a new card');
+      console.warn('⚠️ No payment method selected');
       return;
     }
 
     if (!customerNameCC || !customerEmailCC) {
-      console.log('Validation Error', 'Please fill in customer information');
+      console.warn('⚠️ Customer information required');
       return;
     }
 
@@ -482,6 +507,31 @@ export default function TunaPaymentExample() {
       if (!showCardForm && selectedSavedCard) {
         // Use saved card with bind + payment
         console.log('💳 Using saved card payment flow');
+        
+        // Setup payer for 3DS if enabled
+        if (enable3DS) {
+          console.log('🔒 Setting up payer for 3DS with saved card...');
+          console.log('🔍 Setup parameters:', { name: customerNameCC, email: customerEmailCC });
+          try {
+            const setupResult = await sdk.setupPayer({
+              name: customerNameCC,
+              email: customerEmailCC,
+            });
+            console.log('✅ Payer setup completed for saved card:', setupResult);
+            
+            // Indicate to user that 3DS setup is happening
+            setThreeDSStatus('✅ 3DS payer setup completed');
+            setStatus('🔒 3DS setup complete, processing saved card...');
+          } catch (error) {
+            console.warn('⚠️ Payer setup failed for saved card:', error);
+            setThreeDSStatus('❌ 3DS payer setup failed');
+            setStatus('⚠️ 3DS setup failed, proceeding without...');
+          }
+        } else {
+          console.log('🔓 3DS disabled for saved card payment');
+          setThreeDSStatus('🔓 3DS disabled');
+        }
+        
         result = await sdk.processSavedCardPayment(
           parseFloat(amount),
           selectedSavedCard,
@@ -522,9 +572,16 @@ export default function TunaPaymentExample() {
       console.log('💳 Credit Card result:', result);
       setPaymentResult(result);
 
+      // Debug: Log the complete result structure for saved cards
+      if (!showCardForm && selectedSavedCard) {
+        console.log('🔍 Saved card payment result structure:', JSON.stringify(result, null, 2));
+      }
+
       // Check if 3DS data collection is required using native handler (only if 3DS is enabled)
       // Extract from the full payment result since it includes token response data
       const threeDSInfo = extractThreeDSInfo(result);
+      console.log('🔍 3DS Info extracted:', threeDSInfo);
+      
       if (enable3DS && threeDSInfo.needsDataCollection && threeDSInfo.dataCollectionInfo) {
         console.log('🔒 3DS data collection required, starting native collection...');
         setIsPerformingDataCollection(true);
@@ -546,7 +603,6 @@ export default function TunaPaymentExample() {
           console.error('❌ 3DS data collection failed:', error);
           setThreeDSStatus('❌ Data collection failed');
           setStatus('❌ 3DS data collection failed');
-          console.log('3DS Error', `Data collection failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
           return;
         } finally {
           setIsPerformingDataCollection(false);
@@ -592,8 +648,14 @@ export default function TunaPaymentExample() {
           setThreeDSStatus('🔒 Executing real 3DS challenge...');
           setStatus('🔒 3DS challenge - real authentication required');
           
+          // Track that a 3DS challenge is starting
+          setHas3DSChallengeOpen(true);
+          
           // Execute real 3DS challenge
           const realResult = await executeReal3DSChallenge(realChallengeConfig);
+          
+          // Challenge completed (successfully or not)
+          setHas3DSChallengeOpen(false);
           
           if (realResult.success) {
             console.log('✅ Real 3DS challenge completed successfully:', realResult);
@@ -632,15 +694,38 @@ export default function TunaPaymentExample() {
           result.paymentKey,
           result.methodId,
           (statusUpdate: any) => {
-            console.log('� Payment status update:', statusUpdate);
+            console.log('📊 Payment status update:', statusUpdate);
             handlePaymentStatusUpdate(statusUpdate, result);
           }
         );
       } else if (result.success) {
-        // Handle immediate success without polling
-        const statusMessage = getStatusMessage(result.paymentResponse);
-        setStatus(statusMessage);
-        console.log('Payment Completed! 🎉', 'Your payment has been processed successfully.');
+        // Check if the payment response indicates pending status that requires polling
+        const paymentStatus = result.paymentResponse?.status;
+        const paymentCode = result.paymentResponse?.code;
+        
+        console.log('💳 Payment response status:', paymentStatus, 'code:', paymentCode);
+        
+        // Status 'P' or code indicating pending - start polling like PIX
+        if (paymentStatus === 'P' || paymentStatus === 'pending' || 
+            (result.paymentKey && result.methodId && paymentStatus !== 'approved' && paymentStatus !== 'denied')) {
+          console.log('🔄 Payment pending - starting status polling...');
+          setCurrentPaymentId(result.paymentId);
+          setStatus('🔄 Payment pending, monitoring status...');
+          
+          await sdk.startStatusPolling(
+            result.paymentKey,
+            result.methodId,
+            (statusUpdate: any) => {
+              console.log('📊 Payment status update (pending flow):', statusUpdate);
+              handlePaymentStatusUpdate(statusUpdate, result);
+            }
+          );
+        } else {
+          // Handle immediate success without polling
+          const statusMessage = getStatusMessage(result.paymentResponse);
+          setStatus(statusMessage);
+          // Payment completed successfully
+        }
       } else {
         // Handle payment failure
         const errorMessage = result.paymentResponse?.message || result.error?.message || 'Credit card payment was not successful';
@@ -672,6 +757,7 @@ export default function TunaPaymentExample() {
       '8': { status: 'approved', message: '✅ Payment Approved!', type: 'success' },
       'A': { status: 'denied', message: '❌ Payment Denied (Anti-fraud)', type: 'error' },
       'N': { status: 'denied', message: '❌ Payment Denied (Network)', type: 'error' },
+      'P': { status: 'pending', message: '🔄 Payment Pending (Processing)', type: 'pending' },
     };
 
     const statusInfo = statusCodes[statusUpdate.paymentStatusFound] || 
@@ -691,17 +777,38 @@ export default function TunaPaymentExample() {
     // Update status display
     setStatus(statusInfo.message);
 
-    // Show appropriate alert
+    // Show appropriate alert and handle pending status
     if (statusInfo.type === 'success') {
       console.log(
         'Payment Successful! 🎉', 
         `${statusInfo.message}\n\nPayment ID: ${originalResult.paymentId}\nStatus Code: ${statusUpdate.paymentStatusFound}`
       );
+      
+      // 🔧 BROWSER CLOSING FALLBACK: Close any open browser windows when payment succeeds
+      // This handles the Android case where manual browser closing is needed
+      if (has3DSChallengeOpen) {
+        try {
+          console.log('💡 [App Polling] Payment succeeded with active 3DS challenge - closing browser');
+          WebBrowser.dismissBrowser();
+          setHas3DSChallengeOpen(false); // Mark challenge as closed
+          console.log('✅ [App Polling] Browser close command sent');
+        } catch (error) {
+          console.log('⚠️ [App Polling] Browser close failed:', error);
+        }
+      } else {
+        console.log('💡 [App Polling] Payment succeeded, no active 3DS challenge to close');
+      }
+      
     } else if (statusInfo.type === 'error') {
       console.log(
         'Payment Failed', 
         `${statusInfo.message}\n\nPayment ID: ${originalResult.paymentId}\nStatus Code: ${statusUpdate.paymentStatusFound}\n\nPlease try again or use a different payment method.`
       );
+    } else if (statusInfo.type === 'pending') {
+      console.log('🔄 Payment is pending - continuing to monitor status...');
+      // For pending status (like 'P'), we should continue polling - don't stop here
+      setStatus(`${statusInfo.message} - Monitoring for completion...`);
+      return; // Don't stop polling, let it continue
     } else {
       console.log('Payment Status', `${statusInfo.message}\n\nStatus Code: ${statusUpdate.paymentStatusFound}`);
     }
@@ -795,7 +902,7 @@ export default function TunaPaymentExample() {
 
     // Validation - only name and email are required (document is optional)
     if (!customerName || !customerEmail) {
-      console.log('Validation Error', 'Please fill in customer name and email for PIX');
+      console.warn('⚠️ Customer name and email required for PIX');
       return;
     }
 
@@ -1091,6 +1198,11 @@ export default function TunaPaymentExample() {
                 maxLength={4}
                 secureTextEntry
               />
+              
+              <View style={styles.switchRow}>
+                <Text style={styles.switchLabel}>Enable 3D Secure</Text>
+                <Switch value={enable3DS} onValueChange={setEnable3DS} />
+              </View>
               
               {/* Payment Button for Saved Cards */}
               <TouchableOpacity
@@ -1450,11 +1562,12 @@ export default function TunaPaymentExample() {
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>💰 Tuna Payments</Text>
-        <Text style={styles.subtitle}>Real Payment Processing</Text>
-      </View>
+    <View style={styles.container}>
+      <ScrollView style={styles.scrollContent} contentContainerStyle={styles.scrollContainer}>
+        <View style={styles.header}>
+          <Text style={styles.title}>🌵 Tuna Pagamentos</Text>
+          <Text style={styles.subtitle}>React Native Test App</Text>
+        </View>
 
       {!isSessionConfigured && (
         <View style={styles.sessionCard}>
@@ -1614,7 +1727,24 @@ export default function TunaPaymentExample() {
           </View>
         </View>
       )}
-    </ScrollView>
+      </ScrollView>
+
+      {/* Footer - Sticks to bottom */}
+      <View style={styles.footer}>
+        <View style={styles.footerContent}>
+
+          <Text style={styles.footerText}>🌵 Powered by Tuna Pagamentos</Text>
+          <Text style={styles.footerVersion}>Demo v1.0.0 • React Native SDK</Text>
+          <View style={styles.footerLinks}>
+            <Text style={styles.footerLink}>🔒 Secure</Text>
+            <Text style={styles.footerSeparator}>•</Text>
+            <Text style={styles.footerLink}>⚡ Fast</Text>
+            <Text style={styles.footerSeparator}>•</Text>
+            <Text style={styles.footerLink}>🌍 Global</Text>
+          </View>
+        </View>
+      </View>
+    </View>
   );
 }
 
@@ -1623,6 +1753,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8f9fa',
   },
+  scrollContent: {
+    flex: 1,
+  },
+  scrollContainer: {
+    flexGrow: 1,
+  },
   header: {
     alignItems: 'center',
     paddingVertical: 30,
@@ -1630,13 +1766,15 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
+    fontFamily: 'monospace-condensed',
     fontWeight: 'bold',
-    color: '#333',
+    color: '#31b34e',
     marginBottom: 5,
   },
   subtitle: {
     fontSize: 16,
-    color: '#666',
+    fontWeight: 'bold',
+    color: '#31b34e',
   },
   statusCard: {
     backgroundColor: 'white',
@@ -2186,6 +2324,61 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 15,
     color: '#333',
+  },
+  // Footer styles
+  footer: {
+    backgroundColor: '#2c5530',
+    marginTop: 20,  
+    paddingVertical: 20,
+    paddingHorizontal: 20,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  footerContent: {
+    alignItems: 'center',
+  },
+  footerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    marginBottom: 0,
+  },
+  footerSubtitle: {
+    fontSize: 14,
+    color: '#a8d4b0',
+    marginBottom: 0,
+    fontStyle: 'italic',
+  },
+  footerDivider: {
+    width: 60,
+    height: 2,
+    backgroundColor: '#4a7c59',
+    marginBottom: 0,
+    borderRadius: 1,
+  },
+  footerText: {
+    fontSize: 13,
+    color: '#d1e7d1',
+    marginBottom: 5,
+  },
+  footerVersion: {
+    fontSize: 12,
+    color: '#a8d4b0',
+    marginBottom: 10,
+  },
+  footerLinks: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  footerLink: {
+    fontSize: 12,
+    color: '#ffffff',
+    fontWeight: '500',
+  },
+  footerSeparator: {
+    fontSize: 12,
+    color: '#a8d4b0',
+    marginHorizontal: 8,
   },
   qrCodeWrapper: {
     alignItems: 'center',

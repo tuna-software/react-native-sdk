@@ -329,6 +329,7 @@ export class TunaReactNative {
       SessionId: this.currentSessionId,
       token,
       cvv,
+      // Match JavaScript plugin format: lowercase authenticationInformation  
       authenticationInformation: { code: this.currentSessionId },
     };
 
@@ -1986,13 +1987,21 @@ export class TunaReactNative {
           SessionId: this.currentSessionId!,
           token: token,
           cvv: cvv,
-          authenticationInformation: { code: this.currentSessionId! }
+          // Match JavaScript plugin format: lowercase authenticationInformation
+          authenticationInformation: { 
+            code: this.currentSessionId! 
+          }
         },
         false // Use account/app token headers
       );
 
       if (bindResponse.code !== 1) {
         throw new TunaPaymentError(`CVV binding failed: ${bindResponse.message}`);
+      }
+
+      if (this.config.debug) {
+        console.log('✅ Bind response:', bindResponse);
+        console.log('🔍 Authentication info from bind:', bindResponse.authenticationInformation);
       }
 
       // Step 2: Initialize payment using the bound token
@@ -2011,6 +2020,21 @@ export class TunaReactNative {
           SaveCard: false // Already saved
         }
       };
+
+      // CRITICAL: Add authentication information from bind response for 3DS
+      if (bindResponse.authenticationInformation) {
+        paymentMethod.AuthenticationInformation = {
+          Code: bindResponse.authenticationInformation.code || this.currentSessionId!,
+          ReferenceId: bindResponse.authenticationInformation.referenceId,
+          TransactionId: bindResponse.authenticationInformation.transactionId
+        };
+        
+        if (this.config.debug) {
+          console.log('🔒 Added authentication info to saved card payment method:', paymentMethod.AuthenticationInformation);
+        }
+      } else {
+        console.warn('⚠️ No authentication information returned from bind - 3DS may not work for saved cards');
+      }
 
       // Build init request
       const initRequest: any = {
@@ -2050,7 +2074,8 @@ export class TunaReactNative {
         methodId: paymentResponse.methodId,
         tokenData: {
           token: token,
-          brand: '' // We don't have brand info from bind response
+          brand: '', // We don't have brand info from bind response
+          authenticationInformation: bindResponse.authenticationInformation // Include auth info for 3DS
         },
         threeDSData: paymentResponse.threeDSUrl ? {
           url: paymentResponse.threeDSUrl,
