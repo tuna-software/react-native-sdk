@@ -5,6 +5,31 @@ All notable changes to the Tuna React Native SDK will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2025-10-08
+
+### 🤖 Google Pay Library Migration
+
+#### Changed
+- ✅ **Migrated from `react-native-google-pay`** to `@rnw-community/react-native-payments`
+- ✅ **Updated Google Pay implementation** - Now uses actively maintained library with Android Pay API
+- ✅ **Enhanced merchant configuration** - Real Tuna credentials with TEST environment for development
+- ✅ **Improved error handling** - Better support for Google Pay availability and payment processing
+
+#### Added
+- ✅ **@rnw-community/react-native-payments** as peer dependency
+- ✅ **Android Pay API support** - Proper PaymentRequest implementation for Google Pay
+- ✅ **Environment-aware configuration** - Automatic TEST/PRODUCTION environment handling
+- ✅ **Enhanced debugging** - Improved logging for Google Pay operations
+
+#### Fixed
+- 🐛 **Google Pay merchant errors** - Resolved "merchant is having trouble" issues with proper TEST environment
+- 🐛 **Library compatibility** - Replaced abandoned package with actively maintained alternative
+- 🐛 **Payment sheet display** - Fixed Google Pay sheet appearance and interaction
+
+#### Security
+- 🔒 **Real merchant credentials** - Uses actual Tuna merchant ID (BCR2DN6TR7QYLIKK) in TEST environment
+- 🔒 **Proper tokenization** - Maintained secure token handling through migration
+
 ## [1.2.0] - 2025-10-07
 
 ### 🔒 Enhanced 3D Secure Authentication

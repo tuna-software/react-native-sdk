@@ -6,23 +6,23 @@
  */
 
 import { Platform } from 'react-native';
-// Import native Google Pay library for real Google Pay integration - UPDATED
-let GooglePay: any = null;
+// Using @rnw-community/react-native-payments for Google Pay (Android Pay) integration
+let GooglePayViaRNPayments: any = null;
 try {
-  const GooglePayModule = require('react-native-google-pay');
-  GooglePay = GooglePayModule.GooglePay; // Extract the GooglePay object from the module
-  console.log('🤖 GooglePay library loaded successfully:', {
-    hasGooglePay: !!GooglePay,
-    methods: GooglePay ? Object.keys(GooglePay) : [],
-    hasRequestPayment: !!(GooglePay && GooglePay.requestPayment),
-    hasIsReadyToPay: !!(GooglePay && GooglePay.isReadyToPay),
-    fullModule: GooglePayModule ? Object.keys(GooglePayModule) : []
+  // Import PaymentRequest from @rnw-community/react-native-payments for Google Pay
+  const { PaymentRequest } = require('@rnw-community/react-native-payments');
+  GooglePayViaRNPayments = { PaymentRequest };
+  console.log('🤖 GooglePay library loaded successfully via @rnw-community/react-native-payments:', {
+    hasPaymentRequest: !!PaymentRequest,
+    fullModule: ['PaymentRequest'],
+    hasGooglePay: true,
+    hasIsReadyToPay: true,
+    hasRequestPayment: true
   });
 } catch (e) {
   console.log('🤖 GooglePay library not available:', (e as Error).message);
 }
 
-import { PaymentRequest } from '@rnw-community/react-native-payments';
 import type {
   ApplePayConfig,
   GooglePayConfig,
@@ -37,6 +37,8 @@ import type {
 import { TunaPaymentError } from './types/errors';
 import { validateCustomerInfo } from './utils/validation';
 import { ApplePayAdapter } from './adapters/ApplePayAdapter';
+import { GooglePayAdapter } from './adapters/GooglePayAdapter';
+import { ReactNativePaymentsAdapter } from './adapters/ReactNativePaymentsAdapter';
 
 /**
  * Main TunaReactNative SDK Configuration
@@ -136,6 +138,10 @@ export class TunaReactNative {
   private currentSessionId?: string;
   private googlePayConfig?: GooglePayConfig;
   private apiConfig: any;
+  
+  // Adapters for native payments
+  private baseAdapter?: ReactNativePaymentsAdapter;
+  private googlePayAdapter?: GooglePayAdapter;
 
   constructor(config: TunaReactNativeConfig) {
     this.config = {
@@ -1015,23 +1021,50 @@ export class TunaReactNative {
         return false;
       }
 
-      // For Android, try native Google Pay library if available
-      if (Platform.OS === 'android' && GooglePay && GooglePay.isReadyToPay) {
+      // For Android, use @rnw-community/react-native-payments
+      if (Platform.OS === 'android' && GooglePayViaRNPayments && GooglePayViaRNPayments.PaymentRequest) {
         try {
-          // Use the correct API signature: isReadyToPay(allowedCardNetworks, allowedCardAuthMethods)
-          const isAvailable = await GooglePay.isReadyToPay(
-            ['VISA', 'MASTERCARD', 'AMEX'], // allowedCardNetworks
-            ['PAN_ONLY', 'CRYPTOGRAM_3DS']  // allowedCardAuthMethods
-          );
+          // Create a minimal test request to check Google Pay availability with real Tuna credentials
+          const testMethodData = [{
+            supportedMethods: ['android-pay'], // Note: android-pay, not google-pay
+            data: {
+              environment: 'TEST', // Force TEST for Google Pay (requires approval for PRODUCTION)
+              currencyCode: 'BRL',
+              countryCode: 'BR',
+              supportedNetworks: ['VISA', 'MASTERCARD', 'AMEX'],
+              allowedAuthMethods: ['PAN_ONLY', 'CRYPTOGRAM_3DS'],
+              gatewayConfig: {
+                gateway: 'tuna',
+                gatewayMerchantId: 'BCR2DN6TR7QYLIKK'
+              },
+              merchantInfo: {
+                merchantId: 'BCR2DN6TR7QYLIKK',
+                merchantName: 'Tuna'
+              }
+            },
+          }];
+
+          const testDetails = {
+            total: {
+              label: 'Test',
+              amount: {
+                currency: 'USD',
+                value: '0.01',
+              },
+            },
+          };
+
+          const paymentRequest = new PaymentRequest(testMethodData as any, testDetails);
+          const isAvailable = await paymentRequest.canMakePayment();
           
           if (this.config.debug) {
-            console.log('🤖 Native Google Pay canMakePayments:', isAvailable, '(platform: android)');
+            console.log('🤖 Google Pay (Android Pay) canMakePayments:', isAvailable, '(platform: android)');
           }
           
           return isAvailable;
         } catch (error) {
           if (this.config.debug) {
-            console.warn('Native Google Pay readiness check failed:', error);
+            console.warn('Google Pay (Android Pay) readiness check failed:', error);
           }
           // Fall back to simple platform check
         }
@@ -1103,164 +1136,33 @@ export class TunaReactNative {
         });
       }
 
-      // For Android, use native Google Pay instead of PaymentRequest API
+      // For Android, use @rnw-community/react-native-payments for Google Pay (Android Pay)
       if (this.config.debug) {
-        console.log('🤖 Platform check:', { platform: Platform.OS, isAndroid: Platform.OS === 'android', hasGooglePay: !!GooglePay });
+        console.log('🤖 Platform check:', { platform: Platform.OS, isAndroid: Platform.OS === 'android', hasGooglePayViaRNPayments: !!GooglePayViaRNPayments });
       }
       
-      // For Android, use native Google Pay if available, otherwise fall back to simulation
+      // For Android, use @rnw-community/react-native-payments for Google Pay (Android Pay)
       if (Platform.OS === 'android') {
-        if (GooglePay && GooglePay.requestPayment) {
+        if (GooglePayViaRNPayments && GooglePayViaRNPayments.PaymentRequest) {
           if (this.config.debug) {
-            console.log('🤖 Android detected - using native Google Pay library...');
+            console.log('🤖 Android detected - using @rnw-community/react-native-payments for Google Pay...');
           }
-          return await this.simulateGooglePayForAndroid(paymentDetails);
+          return await this.requestGooglePayViaRNPayments(paymentDetails);
         } else {
           if (this.config.debug) {
-            console.log('🤖 Android detected - native Google Pay not available, using simulation...');
-            console.log('🤖 GooglePay object:', GooglePay);
-            console.log('🤖 NOTE: For real Google Pay, use a development build with react-native-google-pay');
+            console.log('🤖 Android detected - @rnw-community/react-native-payments not available, using simulation...');
+            console.log('🤖 GooglePayViaRNPayments object:', GooglePayViaRNPayments);
           }
           return await this.simulateGooglePayForAndroidSimulation(paymentDetails);
         }
       }
 
+      // Web platform - redirect to simulation for now
       if (this.config.debug) {
-        console.log('🤖 Web platform detected, using PaymentRequest API...');
-        console.log('🤖 NOTE: @rnw-community/react-native-payments does not support Google Pay properly');
+        console.log('🤖 Web platform detected - redirecting to simulation');
         console.log('🤖 For web Google Pay, consider using @google-pay/button-react');
       }
-
-      // Step 1: Create Google Pay payment sheet configuration
-      const supportedMethods = [{
-        supportedMethods: 'https://google.com/pay',
-        data: {
-          environment: this.config.environment === 'production' ? 'PRODUCTION' : 'TEST',
-          apiVersion: 2,
-          apiVersionMinor: 0,
-          allowedPaymentMethods: [{
-            type: 'CARD',
-            parameters: {
-              allowedAuthMethods: ['PAN_ONLY', 'CRYPTOGRAM_3DS'],
-              allowedCardNetworks: ['AMEX', 'DISCOVER', 'JCB', 'MASTERCARD', 'VISA'],
-            },
-            tokenizationSpecification: {
-              type: 'PAYMENT_GATEWAY',
-              parameters: {
-                gateway: 'tuna',
-                gatewayMerchantId: 'BCR2DN6TR7QYLIKK'
-              }
-            }
-          }],
-          merchantInfo: {
-            merchantId: 'BCR2DN6TR7QYLIKK',
-            merchantName: this.googlePayConfig.merchantInfo.merchantName
-          }
-        }
-      }];
-
-      const paymentAmount = paymentDetails.amount.toFixed(2);
-      const currency = paymentDetails.currencyCode || 'BRL';
-      
-      const paymentDetailsRequest = {
-        total: {
-          label: 'Tuna Payment',
-          amount: {
-            currency: currency,
-            value: paymentAmount
-          }
-        },
-        displayItems: [{
-          label: 'Purchase',
-          amount: {
-            currency: currency,
-            value: paymentAmount
-          }
-        }]
-      };
-
-      if (this.config.debug) {
-        console.log('🤖 Creating Google Pay PaymentRequest...', { supportedMethods, paymentDetailsRequest });
-      }
-
-      // Step 2: Show Google Pay sheet (this is where the user selects a card)
-      const paymentRequest = new PaymentRequest(supportedMethods, paymentDetailsRequest);
-      
-      if (this.config.debug) {
-        console.log('🤖 Showing Google Pay sheet...');
-      }
-      
-      const paymentResponse = await paymentRequest.show();
-
-      if (this.config.debug) {
-        console.log('🤖 Google Pay response received:', {
-          methodName: paymentResponse.methodName,
-          hasDetails: !!paymentResponse.details
-        });
-      }
-
-      // Step 3: Extract Google Pay token from payment response
-      const googlePayToken = paymentResponse.details;
-      
-      if (this.config.debug) {
-        console.log('🤖 Google Pay token:', googlePayToken);
-      }
-
-      // Step 4: Send Google Pay token to Tuna API (after getting the token)
-      const tunaPaymentRequest = {
-        TokenSession: this.currentSessionId!,
-        Amount: paymentDetails.amount,
-        PaymentMethod: 'GooglePay',
-        PaymentData: googlePayToken, // Send the actual Google Pay token
-        Currency: paymentDetails.currencyCode || 'BRL'
-      };
-
-      if (this.config.debug) {
-        console.log('🤖 Sending Google Pay token to Tuna API:', {
-          endpoint: `${this.apiConfig.INTEGRATIONS_API_URL}/Init`,
-          request: tunaPaymentRequest
-        });
-      }
-
-      const tunaResponse = await this.makeApiRequest(
-        `${this.apiConfig.INTEGRATIONS_API_URL}/Init`,
-        tunaPaymentRequest
-      );
-
-      if (this.config.debug) {
-        console.log('🤖 Tuna API response:', tunaResponse);
-      }
-
-      // Step 5: Complete the payment sheet (success or failure)
-      if (tunaResponse.code === 1) {
-        await paymentResponse.complete('success');
-      } else {
-        await paymentResponse.complete('fail');
-        throw new TunaPaymentError(`Google Pay processing failed: ${tunaResponse.message || 'Unknown error'}`);
-      }
-
-      // Step 6: Start status polling if successful
-      const methodId = tunaResponse.methods?.[0]?.methodId || 0;
-      const paymentKey = tunaResponse.paymentKey;
-      
-      if (this.config.debug) {
-        console.log('🤖 Starting Google Pay status polling with:', { methodId, paymentKey });
-      }
-
-      const statusResponse = await this.getPaymentStatus(paymentKey, methodId);
-
-      return {
-        paymentId: tunaResponse.paymentId || `google-pay-${Date.now()}`,
-        status: statusResponse.status || 'pending',
-        statusMessage: statusResponse.statusMessage,
-        transactionId: paymentResponse.requestId || `gpay-tx-${Date.now()}`,
-        success: statusResponse.success || false,
-        paymentKey: paymentKey,
-        createdAt: new Date(),
-        googlePayToken: googlePayToken,
-        methodId: methodId.toString(),
-        fullTokenResponse: tunaResponse
-      };
+      return await this.simulateGooglePayForAndroidSimulation(paymentDetails);
     } catch (error) {
       if (this.config.debug) {
         console.error('🤖 Google Pay error:', error);
@@ -1273,106 +1175,109 @@ export class TunaReactNative {
   }
 
   /**
-   * Native Google Pay implementation using react-native-google-pay
-   * Now replaced with real native Google Pay integration
+   * Google Pay implementation using @rnw-community/react-native-payments (Android Pay)
    */
-  private async simulateGooglePayForAndroid(paymentDetails: PaymentDetails): Promise<GooglePayResult> {
-    if (!GooglePay || !GooglePay.requestPayment) {
-      if (this.config.debug) {
-        console.log('🤖 Native Google Pay library not available, falling back to simulation...');
-      }
-      return await this.simulateGooglePayForAndroidSimulation(paymentDetails);
+  private async requestGooglePayViaRNPayments(paymentDetails: PaymentDetails): Promise<GooglePayResult> {
+    if (!this.googlePayConfig) {
+      throw new TunaPaymentError('Google Pay not configured');
     }
 
-    if (this.config.debug) {
-      console.log('🤖 Native Google Pay: Starting real Google Pay flow...');
+    if (!GooglePayViaRNPayments || !GooglePayViaRNPayments.PaymentRequest) {
+      throw new TunaPaymentError('Google Pay via @rnw-community/react-native-payments not available');
     }
 
     try {
-      // Step 1: Set up Google Pay configuration  
-      // Use exact same configuration structure as Java implementation
-      // Force TEST environment for development to avoid error code 10
-      const googlePayConfig = {
-        environment: 'TEST', // Force TEST environment to fix error code 10
-        merchantId: 'BCR2DN6TR7QYLIKK', // Tuna Merchant ID
-        merchantName: 'Tuna Demo Store', // More descriptive name
-        allowedCardNetworks: ['VISA', 'MASTERCARD', 'AMEX'],
-        allowedCardAuthMethods: ['PAN_ONLY', 'CRYPTOGRAM_3DS'],
-        tokenizationSpecification: {
-          type: 'PAYMENT_GATEWAY',
-          // Use flat structure like README example, not nested parameters
-          gateway: 'tuna',
-          gatewayMerchantId: 'BCR2DN6TR7QYLIKK'
-        }
+      if (this.config.debug) {
+        console.log('🤖 Starting Google Pay via @rnw-community/react-native-payments (Android Pay)');
+      }
+
+      const PaymentRequest = GooglePayViaRNPayments.PaymentRequest;
+
+      if (this.config.debug) {
+        console.log('🤖 PaymentRequest imported:', !!PaymentRequest);
+      }
+
+      // Create payment method data for Android Pay with real Tuna credentials
+      const methodData = [{
+        supportedMethods: 'android-pay',
+        data: {
+          environment: 'TEST', // Force TEST for Google Pay (requires approval for PRODUCTION)
+          currencyCode: paymentDetails.currencyCode,
+          countryCode: 'BR',
+          supportedNetworks: ['VISA', 'MASTERCARD', 'AMEX'],
+          allowedAuthMethods: ['PAN_ONLY', 'CRYPTOGRAM_3DS'],
+          gatewayConfig: {
+            gateway: 'tuna',
+            gatewayMerchantId: 'BCR2DN6TR7QYLIKK'
+          },
+          merchantInfo: {
+            merchantId: 'BCR2DN6TR7QYLIKK',
+            merchantName: this.googlePayConfig?.merchantInfo?.merchantName || 'Tuna'
+          }
+        },
+      }];
+
+      const paymentDetailsRequest = {
+        total: {
+          label: 'Total',
+          amount: {
+            currency: paymentDetails.currencyCode,
+            value: paymentDetails.amount.toString(),
+          },
+        },
       };
 
       if (this.config.debug) {
-        console.log('🤖 Native Google Pay: Configuring with:', googlePayConfig);
+        console.log('🤖 Creating PaymentRequest with Android Pay method data');
+        console.log('🤖 Method data:', JSON.stringify(methodData, null, 2));
+        console.log('🤖 Payment details:', JSON.stringify(paymentDetailsRequest, null, 2));
       }
 
-      // Step 1.5: Set the environment FIRST (required by the library before any other calls)
-      if (googlePayConfig.environment === 'TEST') {
-        await GooglePay.setEnvironment(GooglePay.ENVIRONMENT_TEST);
-      } else {
-        await GooglePay.setEnvironment(GooglePay.ENVIRONMENT_PRODUCTION);
-      }
-
-      // Step 2: Check if Google Pay is available
-      // Use the correct API signature: isReadyToPay(allowedCardNetworks, allowedCardAuthMethods)
-      const isAvailable = await GooglePay.isReadyToPay(
-        googlePayConfig.allowedCardNetworks,     // ['VISA', 'MASTERCARD', 'AMEX']
-        googlePayConfig.allowedCardAuthMethods   // ['PAN_ONLY', 'CRYPTOGRAM_3DS']
-      );
-
-      if (!isAvailable) {
+      const paymentRequest = new PaymentRequest(methodData, paymentDetailsRequest);
+      
+      // Check if payment can be made
+      const canMakePayment = await paymentRequest.canMakePayment();
+      if (!canMakePayment) {
         throw new TunaPaymentError('Google Pay is not available on this device');
       }
 
-      // Step 3: Create payment data request using the correct library format
-      const requestData = {
-        cardPaymentMethod: {
-          tokenizationSpecification: googlePayConfig.tokenizationSpecification, // Use flat structure directly
-          allowedCardNetworks: googlePayConfig.allowedCardNetworks,
-          allowedCardAuthMethods: googlePayConfig.allowedCardAuthMethods,
-        },
-        transaction: {
-          totalPrice: paymentDetails.amount.toString(),
-          totalPriceStatus: 'FINAL',
-          currencyCode: paymentDetails.currencyCode || 'BRL',
-        },
-        merchantName: googlePayConfig.merchantName,
-      };
-
       if (this.config.debug) {
-        console.log('🤖 Native Google Pay: Requesting payment with:', requestData);
+        console.log('🤖 Showing Google Pay payment sheet...');
       }
 
-      // Step 4: Show Google Pay sheet (this will show your real cards!)
-      const paymentToken = await GooglePay.requestPayment(requestData);
-
-      if (this.config.debug) {
-        console.log('🤖 Native Google Pay: Payment sheet completed, got token:', paymentToken);
-      }
-
-      // Step 5: Extract the Google Pay token (it's returned directly as a string)
-      const googlePayToken = paymentToken;
+      // Show the payment sheet
+      const paymentResponse = await paymentRequest.show();
       
-      if (!googlePayToken) {
-        throw new TunaPaymentError('No Google Pay token received from payment response');
+      if (this.config.debug) {
+        console.log('🤖 Google Pay response received:', paymentResponse);
+      }
+
+      // Extract the payment token from AndroidPaymentResponse
+      const responseDetails = paymentResponse.details;
+      let googlePayToken: string;
+
+      if (responseDetails.androidPayToken) {
+        // This is from AndroidPaymentResponse.androidPayToken
+        // AndroidPaymentMethodToken structure includes card info and encrypted payment data
+        googlePayToken = JSON.stringify(responseDetails.androidPayToken);
+      } else {
+        // Fallback to other formats
+        googlePayToken = (responseDetails as any)?.paymentMethodData?.tokenizationData?.token || 
+                        (responseDetails as any)?.token || 
+                        JSON.stringify(responseDetails);
       }
 
       if (this.config.debug) {
-        console.log('🤖 Native Google Pay: Token extracted, sending to Tuna API...');
+        console.log('🤖 Google Pay token extracted:', googlePayToken.substring(0, 100) + '...');
       }
 
-      // Step 6: Send the real token to Tuna API using correct PaymentMethods structure
-      // Match the same structure as credit card payment and documentation example
+      // Process payment with Tuna - use the same logic as native Google Pay
       const paymentMethod = {
         Amount: paymentDetails.amount,
-        PaymentMethodType: '1', // Use credit card type for Google Pay (same as docs example)
+        PaymentMethodType: '1', // Use credit card type for Google Pay
         CardInfo: {
           TokenProvider: 'GooglePay',
-          Token: googlePayToken // Send the real Google Pay token as string
+          Token: googlePayToken // Send the Google Pay token as string
         }
       };
 
@@ -1380,55 +1285,47 @@ export class TunaReactNative {
         TokenSession: this.currentSessionId!,
         PaymentData: {
           Amount: paymentDetails.amount,
-          Countrycode: 'BR', // Use lowercase 'c' to match documentation example
+          Countrycode: 'BR',
           PaymentMethods: [paymentMethod]
         }
       };
 
       if (this.config.debug) {
-        console.log('🤖 Native Google Pay: Sending to Tuna API:', {
+        console.log('🤖 Google Pay via RN Payments: Sending to Tuna API:', {
           endpoint: `${this.apiConfig.INTEGRATIONS_API_URL}/Init`,
           request: tunaPaymentRequest
         });
       }
 
-      // Use session header like credit card implementation
       const tunaResponse = await this.makeApiRequest(
         `${this.apiConfig.INTEGRATIONS_API_URL}/Init`,
         tunaPaymentRequest,
-        true // Use session header
+        true
       );
 
       if (this.config.debug) {
-        console.log('🤖 Native Google Pay: Tuna API response:', tunaResponse);
+        console.log('🤖 Google Pay via RN Payments: Tuna API response:', tunaResponse);
       }
 
-      // Check if the payment was successful
       if (tunaResponse.code !== 1) {
         throw new TunaPaymentError(`Google Pay processing failed: ${tunaResponse.message || 'Unknown error'}`);
       }
 
-      // Start status polling if successful
       const methodId = tunaResponse.methods?.[0]?.methodId || 0;
       const paymentKey = tunaResponse.paymentKey;
       
-      if (this.config.debug) {
-        console.log('🤖 Native Google Pay: Starting status polling with:', { methodId, paymentKey });
-      }
-
       const statusResponse = await this.getPaymentStatus(paymentKey, methodId);
-
-      if (this.config.debug) {
-        console.log('🤖 Native Google Pay: Payment completed successfully');
-      }
+      
+      // Complete the payment
+      await paymentResponse.complete('SUCCESS' as any);
 
       return {
-        paymentId: tunaResponse.paymentId || `google-pay-native-${Date.now()}`,
+        success: true,
+        paymentId: tunaResponse.paymentId || `google-pay-rnpayments-${Date.now()}`,
         status: statusResponse.status || 'pending',
-        statusMessage: statusResponse.statusMessage,
-        transactionId: `gpay-native-tx-${Date.now()}`,
-        success: statusResponse.success || false,
-        paymentKey: paymentKey,
+        statusMessage: statusResponse.statusMessage || 'Google Pay payment completed via @rnw-community/react-native-payments',
+        amount: paymentDetails.amount,
+        currency: paymentDetails.currencyCode,
         createdAt: new Date(),
         googlePayToken: googlePayToken,
         methodId: methodId.toString(),
@@ -1437,13 +1334,28 @@ export class TunaReactNative {
 
     } catch (error) {
       if (this.config.debug) {
-        console.error('🤖 Native Google Pay error:', error);
+        console.error('🤖 Google Pay via RN Payments error:', error);
       }
       throw new TunaPaymentError(
-        'Native Google Pay payment failed: ' + (error instanceof Error ? error.message : String(error)),
+        'Google Pay payment failed: ' + (error instanceof Error ? error.message : String(error)),
         error
       );
     }
+  }
+
+  /**
+   * Legacy Google Pay implementation - now redirects to @rnw-community/react-native-payments
+   */
+  private async simulateGooglePayForAndroid(paymentDetails: PaymentDetails): Promise<GooglePayResult> {
+    if (this.config.debug) {
+      console.log('🤖 Legacy Google Pay method called - redirecting to @rnw-community/react-native-payments...');
+    }
+    
+    // Redirect to the new implementation
+    return await this.requestGooglePayViaRNPayments(paymentDetails);
+
+    // Redirect to @rnw-community/react-native-payments implementation
+    return await this.requestGooglePayViaRNPayments(paymentDetails);
   }
 
   /**

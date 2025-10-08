@@ -229,6 +229,34 @@ export default function TunaPaymentExample() {
   const [isLoadingSavedCards, setIsLoadingSavedCards] = useState(false);
   const [selectedSavedCard, setSelectedSavedCard] = useState<string | null>(null);
   const [showCardForm, setShowCardForm] = useState(false); // Toggle between list and form
+
+  // Reset app to initial state when session ID changes
+  const handleSessionIdChange = (newSessionId: string) => {
+    setSessionId(newSessionId);
+    
+    // Reset payment-related state
+    setPaymentResult(null);
+    setPixResult(null);
+    setPixStatus('');
+    setIsPollingPix(false);
+    setPaymentInProgress(false);
+    setCurrentPaymentId('');
+    setHas3DSChallengeOpen(false);
+    
+    // Reset 3DS state
+    setIsPerformingDataCollection(false);
+    setIsPerformingChallenge(false);
+    setThreeDSStatus('');
+    
+    // Reset saved cards selection
+    setSelectedSavedCard(null);
+    setShowCardForm(false);
+    
+    // Reset session state
+    setIsSessionConfigured(false);
+    setStatus('Enter session ID to initialize REAL Tuna SDK');
+  };
+
   // Initialize SDK manually after session ID is provided
   // useEffect(() => {
   //   initializeSDK();
@@ -1609,7 +1637,7 @@ export default function TunaPaymentExample() {
               <TextInput
                 style={[styles.input, styles.sessionInput]}
                 value={sessionId}
-                onChangeText={setSessionId}
+                onChangeText={handleSessionIdChange}
                 placeholder="Enter Tuna session ID..."
                 multiline={true}
                 numberOfLines={3}
@@ -1621,7 +1649,7 @@ export default function TunaPaymentExample() {
                   try {
                     const clipboardContent = await getFromClipboard();
                     if (clipboardContent.trim()) {
-                      setSessionId(clipboardContent.trim());
+                      handleSessionIdChange(clipboardContent.trim());
                       console.log('📋 Session ID pasted from clipboard');
                     } else {
                       console.log('📋 No content found in clipboard (or clipboard not available)');

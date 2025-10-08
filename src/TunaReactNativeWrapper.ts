@@ -32,9 +32,8 @@ try {
 }
 
 try {
-  const GooglePayImport = require('react-native-google-pay');
-  GooglePayModule = GooglePayImport.GooglePay;
-  console.log('🤖 Google Pay module loaded');
+  GooglePayModule = null; // We'll use GooglePayAdapter instead
+  console.log('🤖 Google Pay will use GooglePayAdapter with @rnw-community/react-native-payments');
 } catch (e) {
   console.log('🤖 Google Pay module not available:', (e as Error).message);
 }
@@ -201,7 +200,7 @@ export class TunaReactNative extends TunaReactNativeEnhanced {
     try {
       console.log('🤖 [GooglePay] Starting Google Pay payment:', paymentDetails);
       
-      // Implementation with react-native-google-pay will go here
+      // Implementation with @rnw-community/react-native-payments will go here
       // For now, return a simulated result
       
       const result: GooglePayResult = {
