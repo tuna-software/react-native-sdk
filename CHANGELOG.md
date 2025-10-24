@@ -5,6 +5,44 @@ All notable changes to the Tuna React Native SDK will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2025-10-23
+
+### 🔍 Device Profiling Support (Zero Dependencies Approach)
+
+#### Added
+- ✅ **Device profiling callback interface** - Simple, extensible pattern for fraud prevention
+- ✅ **FrontData structure** - Automatic device session data transmission to Tuna API
+- ✅ **Multi-provider support** - Collect data from multiple providers simultaneously
+- ✅ **Zero SDK dependencies** - No forced libraries, developers choose their providers
+- ✅ **MercadoPago demo implementation** - Working example in TunaPaymentDemo app
+- ✅ **Graceful fallback** - Payments proceed even if device profiling fails
+- ✅ **3-second timeout** - Non-blocking device data collection
+- ✅ **Cross-platform compatible** - Works on iOS, Android, and Web
+
+#### Example Usage
+```typescript
+import { MercadoPagoProfiler } from './deviceProfiling/MercadoPagoProfiler';
+
+const mpProfiler = new MercadoPagoProfiler({
+  publicKey: 'TEST-xxx',
+  environment: 'test'
+});
+
+const sdk = new TunaReactNative({
+  environment: 'sandbox',
+  deviceProfilingCallback: async () => {
+    const mpSession = await mpProfiler.getDeviceSession();
+    return [{ key: 'MercadoPago', value: mpSession }];
+  }
+});
+```
+
+#### Technical Details
+- Device data automatically included in all payment init requests (credit card, PIX, saved cards)
+- Optional configuration - fully backward compatible
+- Provider-agnostic design - works with Cybersource, MercadoPago, Sift, Clearsale, or custom providers
+- Comprehensive error handling and debug logging
+
 ## [1.3.0] - 2025-10-08
 
 ### 🤖 Google Pay Library Migration

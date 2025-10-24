@@ -7,7 +7,7 @@
 import { TunaApiClient, CardData, PaymentInitRequest } from '../api/tunaApi';
 import { SavedCardsManager } from '../storage/savedCards';
 import { TunaPaymentError } from '../types/errors';
-import type { CustomerInfo, PaymentResult } from '../types/payment';
+import type { CustomerInfo, PaymentResult, FrontData } from '../types/payment';
 
 /**
  * Credit Card Payment Processor
@@ -31,10 +31,14 @@ export class CreditCardProcessor {
     cardData: CardData,
     installments: number = 1,
     saveCard: boolean = false,
-    customer?: CustomerInfo
+    customer?: CustomerInfo,
+    frontData?: FrontData
   ): Promise<PaymentResult> {
     if (this.debug) {
       console.log('💳 [CreditCard] Processing credit card payment:', { amount, installments, saveCard });
+      if (frontData?.Sessions) {
+        console.log('🔍 [CreditCard] Device profiling data:', frontData.Sessions);
+      }
     }
 
     // Validate amount
@@ -73,6 +77,7 @@ export class CreditCardProcessor {
         }],
         Customer: customer,
         ReturnUrl: 'https://callback.example.com/payment-result',
+        FrontData: frontData,
       };
 
       if (this.debug) {
@@ -113,8 +118,7 @@ export class CreditCardProcessor {
         currency: 'BRL',
         createdAt: new Date(),
         errorMessage: statusResponse.success ? undefined : statusResponse.statusMessage,
-        fullResponse: paymentResponse,
-        fullStatusResponse: statusResponse
+        fullResponse: statusResponse
       };
 
     } catch (error) {
@@ -134,10 +138,14 @@ export class CreditCardProcessor {
     token: string,
     cvv: string,
     installments: number = 1,
-    customer?: CustomerInfo
+    customer?: CustomerInfo,
+    frontData?: FrontData
   ): Promise<PaymentResult> {
     if (this.debug) {
       console.log('💾 [CreditCard] Processing saved card payment:', { amount, installments });
+      if (frontData?.Sessions) {
+        console.log('🔍 [CreditCard] Device profiling data:', frontData.Sessions);
+      }
     }
 
     // Validate amount
@@ -171,6 +179,7 @@ export class CreditCardProcessor {
         }],
         Customer: customer,
         ReturnUrl: 'https://callback.example.com/payment-result',
+        FrontData: frontData,
       };
 
       if (this.debug) {
@@ -211,8 +220,7 @@ export class CreditCardProcessor {
         currency: 'BRL',
         createdAt: new Date(),
         errorMessage: statusResponse.success ? undefined : statusResponse.statusMessage,
-        fullResponse: paymentResponse,
-        fullStatusResponse: statusResponse
+        fullResponse: statusResponse
       };
 
     } catch (error) {

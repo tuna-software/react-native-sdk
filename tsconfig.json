@@ -6,6 +6,7 @@
       "es2019.array",
       "dom"
     ],
+    "module": "esnext",
     "allowJs": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
@@ -41,6 +42,5 @@
     "**/*.test.ts",
     "**/*.test.tsx",
     "src/**/*.reference.ts"
-  ],
-  "extends": "expo/tsconfig.base"
+  ]
 }

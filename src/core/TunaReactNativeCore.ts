@@ -14,6 +14,9 @@ import type {
   PIXResult,
   CustomerInfo,
   Environment,
+  DeviceProfilingCallback,
+  DeviceSession,
+  FrontData,
 } from '../types/payment';
 import { TunaPaymentError } from '../types/errors';
 import { validateCustomerInfo } from '../utils/validation';
@@ -37,6 +40,8 @@ export interface TunaReactNativeConfig {
   baseUrl?: string;
   /** Enable debug logging */
   debug?: boolean;
+  /** Optional callback for device profiling data collection */
+  deviceProfilingCallback?: DeviceProfilingCallback;
 }
 
 /**
@@ -50,7 +55,7 @@ export interface TunaReactNativeConfig {
  * - Real-time status tracking
  */
 export class TunaReactNativeEnhanced {
-  private config: TunaReactNativeConfig;
+  protected config: TunaReactNativeConfig;
   private isInitialized = false;
   private currentSessionId?: string;
   
@@ -61,8 +66,8 @@ export class TunaReactNativeEnhanced {
   private pixProcessor: PIXProcessor;
 
   // Platform configurations
-  private applePayConfig?: ApplePayConfig;
-  private googlePayConfig?: GooglePayConfig;
+  protected applePayConfig?: ApplePayConfig;
+  protected googlePayConfig?: GooglePayConfig;
 
   constructor(config: TunaReactNativeConfig = {}) {
     this.config = {
@@ -117,10 +122,57 @@ export class TunaReactNativeEnhanced {
   /**
    * Ensure SDK is initialized before operations
    */
-  private ensureInitialized(): void {
+  protected ensureInitialized(): void {
     if (!this.isReady()) {
       throw new TunaPaymentError('TunaReactNative SDK is not initialized. Call initialize() first.');
     }
+  }
+
+  /**
+   * Collect device profiling data with timeout
+   * @private
+   */
+  private async collectDeviceProfilingData(): Promise<FrontData> {
+    const frontData: FrontData = {
+      Origin: 'MOBILE',
+      CookiesAccepted: true,
+    };
+
+    // If no callback provided, return basic frontData
+    if (!this.config.deviceProfilingCallback) {
+      return frontData;
+    }
+
+    try {
+      // Create timeout promise
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Device profiling timeout')), 3000);
+      });
+
+      // Race between callback and timeout
+      const sessions = await Promise.race([
+        this.config.deviceProfilingCallback(),
+        timeoutPromise,
+      ]);
+
+      if (sessions && sessions.length > 0) {
+        frontData.Sessions = sessions.map(s => ({
+          Key: s.key,
+          Value: s.value,
+        }));
+
+        if (this.config.debug) {
+          console.log('✅ [DeviceProfiling] Collected sessions:', frontData.Sessions);
+        }
+      }
+    } catch (error) {
+      // Log error but don't fail the payment
+      if (this.config.debug) {
+        console.log('⚠️  [DeviceProfiling] Failed to collect device data:', error);
+      }
+    }
+
+    return frontData;
   }
 
   // ===========================================
@@ -138,7 +190,18 @@ export class TunaReactNativeEnhanced {
     customer?: CustomerInfo
   ): Promise<PaymentResult> {
     this.ensureInitialized();
-    return await this.creditCardProcessor.processCreditCardPayment(amount, cardData, installments, saveCard, customer);
+    
+    // Collect device profiling data
+    const frontData = await this.collectDeviceProfilingData();
+    
+    return await this.creditCardProcessor.processCreditCardPayment(
+      amount, 
+      cardData, 
+      installments, 
+      saveCard, 
+      customer,
+      frontData
+    );
   }
 
   /**
@@ -152,7 +215,18 @@ export class TunaReactNativeEnhanced {
     customer?: CustomerInfo
   ): Promise<PaymentResult> {
     this.ensureInitialized();
-    return await this.creditCardProcessor.processSavedCardPayment(amount, token, cvv, installments, customer);
+    
+    // Collect device profiling data
+    const frontData = await this.collectDeviceProfilingData();
+    
+    return await this.creditCardProcessor.processSavedCardPayment(
+      amount, 
+      token, 
+      cvv, 
+      installments, 
+      customer,
+      frontData
+    );
   }
 
   // ===========================================
@@ -350,7 +424,11 @@ export class TunaReactNativeEnhanced {
    */
   async generatePIXPayment(amount: number, customer: CustomerInfo): Promise<PIXResult> {
     this.ensureInitialized();
-    return await this.pixProcessor.generatePIXPayment(amount, customer);
+    
+    // Collect device profiling data
+    const frontData = await this.collectDeviceProfilingData();
+    
+    return await this.pixProcessor.generatePIXPayment(amount, customer, frontData);
   }
 
   /**

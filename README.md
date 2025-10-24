@@ -402,6 +402,141 @@ Our 3DS implementation includes several advanced features for reliability and us
 - Multiple fallback methods ensure browsers don't stay open
 - Platform-specific optimizations for iOS and Android
 
+## 🔍 Device Profiling for Fraud Prevention
+
+The SDK supports optional device profiling for enhanced fraud prevention through a **zero-dependencies callback pattern**. This allows you to integrate **any** device profiling provider without adding dependencies to the core SDK.
+
+### Philosophy
+- **Provider Agnostic**: Use Cybersource, MercadoPago, Sift, Clearsale, or any custom provider
+- **Zero SDK Dependencies**: Only install the profiling libraries you need
+- **Flexible Integration**: Implement your own device profiling logic
+- **Graceful Fallback**: Payments proceed even if profiling fails
+
+### Quick Start
+
+#### 1. Install Your Preferred Provider (Optional)
+```bash
+# Example: MercadoPago
+npm install @mercadopago/sdk-react
+
+# Example: Cybersource
+npm install react-native-cybersource-fingerprint-sdk
+```
+
+#### 2. Create Device Profiler
+```typescript
+// Example: MercadoPago Profiler
+import { Platform } from 'react-native';
+
+export class MercadoPagoProfiler {
+  private sessionId: string;
+
+  async initialize(): Promise<void> {
+    this.sessionId = this.generateSessionId();
+  }
+
+  async getDeviceSession(): Promise<string> {
+    // Your device profiling implementation
+    return this.sessionId;
+  }
+
+  private generateSessionId(): string {
+    const platform = Platform.OS;
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 15);
+    return `mp-${platform}-${timestamp}-${random}`;
+  }
+}
+```
+
+#### 3. Configure SDK with Device Profiling
+```typescript
+import TunaReactNative from '@tuna-software/react-native-sdk';
+import { MercadoPagoProfiler } from './deviceProfiling/MercadoPagoProfiler';
+
+// Initialize profiler
+const mpProfiler = new MercadoPagoProfiler({
+  publicKey: 'YOUR_MP_PUBLIC_KEY',
+  environment: 'test'
+});
+await mpProfiler.initialize();
+
+// Configure SDK with device profiling callback
+const sdk = new TunaReactNative({
+  environment: 'sandbox',
+  deviceProfilingCallback: async () => {
+    const sessions = [];
+    
+    // MercadoPago
+    try {
+      const mpSession = await mpProfiler.getDeviceSession();
+      sessions.push({ key: 'MercadoPago', value: mpSession });
+    } catch (error) {
+      console.log('MercadoPago profiling failed:', error);
+    }
+    
+    // Add more providers as needed
+    // const csSession = await cybersourceProfiler.getSession();
+    // sessions.push({ key: 'Cybersource', value: csSession });
+    
+    return sessions;
+  }
+});
+```
+
+### How It Works
+
+1. **Callback Invocation**: Before each payment, the SDK calls your `deviceProfilingCallback`
+2. **Data Collection**: Your profiler collects device fingerprint/session data
+3. **Timeout Protection**: 3-second timeout ensures payments aren't blocked
+4. **FrontData Transmission**: Device data automatically included in payment requests
+5. **Graceful Fallback**: If profiling fails, payment continues normally
+
+### Example Providers
+
+#### MercadoPago
+```typescript
+deviceProfilingCallback: async () => {
+  const mpSession = await mpProfiler.getDeviceSession();
+  return [{ key: 'MercadoPago', value: mpSession }];
+}
+```
+
+#### Cybersource
+```typescript
+import CybersourceFingerprint from 'react-native-cybersource-fingerprint-sdk';
+
+deviceProfilingCallback: async () => {
+  const sessionId = await CybersourceFingerprint.getDeviceId();
+  return [{ key: 'Cybersource', value: sessionId }];
+}
+```
+
+#### Custom Provider
+```typescript
+deviceProfilingCallback: async () => {
+  const customData = await myAnalytics.getDeviceInfo();
+  return [
+    { key: 'CustomAnalytics', value: customData },
+    { key: 'AnotherProvider', value: 'session-123' }
+  ];
+}
+```
+
+### Benefits
+
+✅ **Lightweight SDK** - No forced dependencies  
+✅ **Maximum Flexibility** - Use any fraud prevention service  
+✅ **Easy Maintenance** - Provider updates don't require SDK updates  
+✅ **Future-Proof** - New providers work without SDK changes  
+✅ **Non-Blocking** - Payments never delayed by profiling issues
+
+### Demo Implementation
+
+See the complete MercadoPago device profiling implementation in:
+- `example/TunaPaymentDemo/src/deviceProfiling/MercadoPagoProfiler.ts`
+- `example/TunaPaymentDemo/TunaPaymentExample.tsx`
+
 ## 🌍 Supported Countries
 
 - 🇺🇸 **United States** - Apple Pay, Google Pay, Credit Cards

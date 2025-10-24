@@ -33,6 +33,8 @@ import type {
   PIXResult,
   CustomerInfo,
   Environment,
+  DeviceSession,
+  DeviceProfilingCallback,
 } from './types/payment';
 import { TunaPaymentError } from './types/errors';
 import { validateCustomerInfo } from './utils/validation';
@@ -52,6 +54,8 @@ export interface TunaReactNativeConfig {
   baseUrl?: string;
   /** Enable debug logging */
   debug?: boolean;
+  /** Optional callback for device profiling data collection */
+  deviceProfilingCallback?: DeviceProfilingCallback;
 }
 
 /**

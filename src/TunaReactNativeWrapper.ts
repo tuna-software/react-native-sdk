@@ -5,7 +5,7 @@
  */
 
 import { Platform } from 'react-native';
-import { TunaReactNativeEnhanced, TunaReactNativeConfig } from '../core/TunaReactNativeCore';
+import { TunaReactNativeEnhanced, TunaReactNativeConfig } from './core/TunaReactNativeCore';
 import type {
   ApplePayConfig,
   GooglePayConfig,
@@ -15,9 +15,9 @@ import type {
   GooglePayResult,
   PIXResult,
   CustomerInfo,
-} from '../types/payment';
-import { CardData } from '../api/tunaApi';
-import { SavedCard } from '../storage/savedCards';
+} from './types/payment';
+import { CardData } from './api/tunaApi';
+import { SavedCard } from './storage/savedCards';
 
 // Import native payment libraries
 let ApplePayModule: any = null;

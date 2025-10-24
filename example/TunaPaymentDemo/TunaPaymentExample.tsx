@@ -21,6 +21,11 @@ import {
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import QRCode from 'qrcode';
+
+// Device Profiling
+import { MercadoPagoProfiler } from './src/deviceProfiling/MercadoPagoProfiler';
+import type { DeviceSession } from '../../src/types/payment';
+
 // Multi-approach clipboard functionality that works in different environments
 const copyToClipboard = async (text: string) => {
   // Approach 1: Try web Clipboard API (works in web builds and some React Native WebView contexts)
@@ -152,10 +157,38 @@ interface CustomerInfo {
 }
 
 // Configuration using REAL session from Tuna backend
+// Initialize MercadoPago device profiler
+const mpProfiler = new MercadoPagoProfiler({
+  publicKey: 'TEST-191b64a5-347e-499e-8bc1-26664fb5f5a6', // Demo MercadoPago key
+  environment: 'test'
+});
+
+// Initialize profiler early
+mpProfiler.initialize().catch(err => 
+  console.log('⚠️  MercadoPago profiler initialization failed:', err)
+);
+
 const TUNA_CONFIG: TunaReactNativeConfig = {
   // environment defaults to 'production' now
   debug: true,
   sessionTimeout: 30 * 60 * 1000, // 30 minutes
+  // Device profiling callback
+  deviceProfilingCallback: async (): Promise<DeviceSession[]> => {
+    const sessions: DeviceSession[] = [];
+    
+    try {
+      const mpSession = await mpProfiler.getDeviceSession();
+      sessions.push({ 
+        key: 'MercadoPago', 
+        value: mpSession 
+      });
+      console.log('✅ [DeviceProfiling] MercadoPago session collected:', mpSession);
+    } catch (error) {
+      console.log('⚠️  [DeviceProfiling] MercadoPago collection failed:', error);
+    }
+    
+    return sessions;
+  }
 };
 
 // REAL session ID from Tuna - this should come from your backend

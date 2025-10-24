@@ -172,6 +172,8 @@ export interface PaymentResult {
   tokenData?: TokenData;
   paymentResponse?: any;
   error?: TunaError;
+  errorMessage?: string;
+  fullResponse?: any;
 }
 
 export interface ApplePayResult extends PaymentResult {
@@ -216,6 +218,7 @@ export interface PIXResult extends PaymentResult {
   qrCodeBase64?: string;
   copyPasteCode?: string;
   expirationDate?: Date;
+  fullResponse?: any;
 }
 
 export interface BoletoResult {
@@ -452,4 +455,34 @@ export interface AntifraudResult {
   deviceFingerprint: string;
   timestamp: Date;
   metadata?: Record<string, any>;
+}
+
+// ===========================================
+// DEVICE PROFILING TYPES
+// ===========================================
+
+/**
+ * Device session information from a profiling provider
+ */
+export interface DeviceSession {
+  key: 'Cybersource' | 'MercadoPago' | 'Sift' | 'Clearsale' | string;
+  value: string; // Session ID or device fingerprint
+}
+
+/**
+ * Callback function to collect device profiling data
+ */
+export type DeviceProfilingCallback = () => Promise<DeviceSession[]>;
+
+/**
+ * FrontData structure for sending device profiling information to Tuna API
+ */
+export interface FrontData {
+  Sessions?: Array<{
+    Key: string;
+    Value: string;
+  }>;
+  Origin: 'MOBILE' | 'WEBSITE';
+  IpAddress?: string;
+  CookiesAccepted?: boolean;
 }

@@ -4,7 +4,7 @@
  * Handles all communication with Tuna's payment APIs
  */
 
-import type { Environment } from '../types/payment';
+import type { Environment, FrontData } from '../types/payment';
 import { TunaPaymentError } from '../types/errors';
 
 /**
@@ -65,6 +65,7 @@ export interface PaymentInitRequest {
   PaymentMethods: PaymentMethodData[];
   Customer?: any;
   ReturnUrl?: string;
+  FrontData?: FrontData;
 }
 
 /**

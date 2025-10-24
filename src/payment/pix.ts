@@ -6,7 +6,7 @@
 
 import { TunaApiClient } from '../api/tunaApi';
 import { TunaPaymentError } from '../types/errors';
-import type { CustomerInfo, PIXResult } from '../types/payment';
+import type { CustomerInfo, PIXResult, FrontData } from '../types/payment';
 
 /**
  * PIX Payment Processor
@@ -23,9 +23,12 @@ export class PIXProcessor {
   /**
    * Generate PIX payment
    */
-  async generatePIXPayment(amount: number, customer: CustomerInfo): Promise<PIXResult> {
+  async generatePIXPayment(amount: number, customer: CustomerInfo, frontData?: FrontData): Promise<PIXResult> {
     if (this.debug) {
       console.log('🇧🇷 [PIX] Generating PIX payment:', { amount, customer: customer.email });
+      if (frontData?.Sessions) {
+        console.log('🔍 [PIX] Device profiling data:', frontData.Sessions);
+      }
     }
 
     try {
@@ -55,6 +58,7 @@ export class PIXProcessor {
           Phone: customer.phone,
         },
         ReturnUrl: 'https://callback.example.com/pix-result',
+        FrontData: frontData,
       };
 
       if (this.debug) {
@@ -99,8 +103,7 @@ export class PIXProcessor {
         currency: 'BRL',
         createdAt: new Date(),
         expirationDate: new Date(Date.now() + 15 * 60 * 1000), // 15 minutes from now
-        fullResponse: response,
-        fullStatusResponse: statusResponse
+        fullResponse: statusResponse
       };
 
     } catch (error) {
